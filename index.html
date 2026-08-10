@@ -24,11 +24,11 @@
     gap: 10px;
     padding: 10px;
   }
-  .hud { display: flex; gap: 22px; font-size: 15px; letter-spacing: 1px; }
+  .hud { display: flex; gap: 20px; font-size: 15px; letter-spacing: 1px; }
   .hud .label { color: #6b76a3; font-size: 11px; text-transform: uppercase; }
   .hud .value { font-size: 22px; font-weight: 700; color: #5df2c6; text-shadow: 0 0 12px rgba(93,242,198,.6); }
   .hud .value.best { color: #ffb84d; text-shadow: 0 0 12px rgba(255,184,77,.6); }
-  .hud .value.floor { color: #b46bff; text-shadow: 0 0 12px rgba(180,107,255,.6); }
+  .hud .value.evo { color: #b46bff; text-shadow: 0 0 12px rgba(180,107,255,.6); }
   .hud > div { text-align: center; }
   #buffBar { min-height: 24px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .buff-chip {
@@ -95,12 +95,12 @@
   .new-record { color: #ffb84d; font-weight: 700; letter-spacing: 2px; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .4; } }
   #pausedTag { position: absolute; top: 12px; right: 14px; font-size: 12px; color: #ffb84d; letter-spacing: 2px; display: none; }
-  .draft-title { font-size: 24px; font-weight: 800; color: #b46bff; letter-spacing: 3px; text-shadow: 0 0 16px rgba(180,107,255,.6); }
+  .draft-title { font-size: 26px; font-weight: 800; color: #b46bff; letter-spacing: 3px; text-shadow: 0 0 16px rgba(180,107,255,.6); }
   .draft-sub { color: #8a94bd; font-size: 13px; }
   #cardRow { display: flex; gap: 12px; justify-content: center; }
   .card {
-    width: 108px;
-    min-height: 150px;
+    width: 112px;
+    min-height: 168px;
     padding: 14px 8px;
     border-radius: 12px;
     background: linear-gradient(160deg, rgba(180,107,255,.16), rgba(93,242,198,.08));
@@ -109,14 +109,16 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     transition: transform .15s ease, box-shadow .15s ease;
   }
   .card:hover { transform: translateY(-6px) scale(1.04); box-shadow: 0 8px 30px rgba(180,107,255,.4); border-color: #b46bff; }
-  .card .icon { font-size: 34px; }
+  .card .icon { font-size: 32px; }
   .card .name { font-size: 14px; font-weight: 700; color: #e8dcff; }
   .card .desc { font-size: 11px; color: #9aa3cc; line-height: 1.5; }
-  .card .key { font-size: 10px; color: #5b6590; margin-top: auto; }
+  .card .cost { font-size: 10px; color: #ff9db1; margin-top: auto; }
+  .card .cost.free { color: #5df2c6; }
+  .card .key { font-size: 10px; color: #5b6590; }
 </style>
 </head>
 <body>
@@ -124,8 +126,8 @@
   <div class="hud">
     <div><div class="label">得分</div><div class="value" id="score">0</div></div>
     <div><div class="label">最高</div><div class="value best" id="best">0</div></div>
-    <div><div class="label">层数</div><div class="value floor" id="floor">1</div></div>
-    <div><div class="label">目标</div><div class="value" id="goal">0/5</div></div>
+    <div><div class="label">进化</div><div class="value evo" id="evoLv">Lv.0</div></div>
+    <div><div class="label">下次进化</div><div class="value" id="evoProg">0/10</div></div>
   </div>
   <div id="buffBar"></div>
 
@@ -135,23 +137,23 @@
 
     <div class="overlay" id="startScreen">
       <div class="title">肉鸽贪吃蛇</div>
-      <div class="subtitle">ROGUE SNAKE · 无尽地牢</div>
+      <div class="subtitle">ROGUE SNAKE · 进化</div>
       <button class="btn" id="startBtn">开始冒险</button>
       <div class="hint" id="controlHint"></div>
-      <div class="hint">每层吃够食物开启传送门 · 过层三选一强化<br>撞墙即死 · 层数越深越危险</div>
+      <div class="hint">吞食豆子积累进化（10 / 20 / 30 / 50 / 70 / 90 / 120…）<br>每次进化三选一技能 · 技能的代价是地图上生成障碍<br>撞墙即死 · 障碍会不断累积</div>
     </div>
 
     <div class="overlay hidden" id="draftScreen">
-      <div class="draft-title">第 <span id="draftFloor">1</span> 层通关！</div>
-      <div class="draft-sub">选择一项强化，深入地牢</div>
+      <div class="draft-title">✨ 进化 Lv.<span id="draftLv">1</span>！</div>
+      <div class="draft-sub">选择一项技能 —— 力量皆有代价</div>
       <div id="cardRow"></div>
     </div>
 
     <div class="overlay hidden" id="gameOverScreen">
       <div class="gameover-title">冒险终结</div>
       <div class="run-stats">
-        到达层数 <b id="finalFloor">1</b><br>
-        本局得分 <b id="finalScore">0</b> · 共吞食 <b id="finalEaten">0</b>
+        进化等级 <b id="finalEvo">0</b> · 共吞食 <b id="finalBeans">0</b><br>
+        本局得分 <b id="finalScore">0</b>
       </div>
       <div class="new-record" id="newRecord" style="display:none">🏆 新纪录！</div>
       <button class="btn" id="restartBtn">再来一局</button>
@@ -165,30 +167,31 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const el = id => document.getElementById(id);
-  const scoreEl = el('score'), bestEl = el('best'), floorEl = el('floor'), goalEl = el('goal');
+  const scoreEl = el('score'), bestEl = el('best'), evoLvEl = el('evoLv'), evoProgEl = el('evoProg');
   const startScreen = el('startScreen'), draftScreen = el('draftScreen'), gameOverScreen = el('gameOverScreen');
   const buffBar = el('buffBar'), pausedTag = el('pausedTag'), cardRow = el('cardRow');
   const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   el('controlHint').textContent = isTouch ? '手指滑动屏幕控制方向' : '方向键 / WASD 移动 · 空格暂停 · 数字键 1/2/3 选卡';
 
-  // ============ Buff 定义 ============
-  const BUFF_POOL = [
-    { id: 'shield',    icon: '🛡️', name: '圣盾',     desc: '抵挡一次致命碰撞（可叠加）' },
-    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现' },
-    { id: 'magnet',    icon: '🧲', name: '食物磁铁', desc: '靠近的食物被自动吞食（范围+1）' },
-    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '食物得分 +50%（可叠加）' },
-    { id: 'slow',      icon: '⚓', name: '稳定锚',   desc: '移速 -15%，操控更稳（可叠加）' },
-    { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体' },
-    { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '每层一次：撞到自己改为断尾存活' },
-    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '每层额外出现一个金色食物（+30分）' },
+  // ============ 技能定义（cost = 生成的障碍数） ============
+  const SKILL_POOL = [
+    { id: 'shield',    icon: '🛡️', name: '圣盾',     desc: '抵挡一次致命碰撞（可叠加）',       cost: 3 },
+    { id: 'magnet',    icon: '🧲', name: '食物磁铁', desc: '靠近的豆子被自动吞食（范围+1）',     cost: 3 },
+    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '豆子得分 +50%（可叠加）',           cost: 4 },
+    { id: 'slow',      icon: '⚓', name: '稳定锚',   desc: '移速 -15%，操控更稳（可叠加）',     cost: 2 },
+    { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体',               cost: 2 },
+    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',            cost: 5 },
+    { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',   cost: 4 },
+    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '豆子有 30% 概率变为金豆（+50分）',  cost: 3 },
+    { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',              cost: 0 },
   ];
+  const MAX_OBSTACLES = 90;
 
   // ============ 状态 ============
   let cell = 20, size = 420;
-  let snake, dir, nextDir, obstacles, food, bonusFoods, portal;
-  let floor, score, best, foodsEaten, foodsNeeded, totalEaten;
-  let buffs, resilientUsed;
-  let alive, started, paused, drafting;
+  let snake, dir, nextDir, obstacles, food, goldFood;
+  let score, best, beans, evoLevel;
+  let skills, alive, started, paused, drafting;
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -197,6 +200,13 @@
   const rand = n => (Math.random() * n) | 0;
   const same = (a, b) => a.x === b.x && a.y === b.y;
   const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+
+  // 进化阈值（累计吞食数）：10,20,30,50,70,90,120,150,180,220…
+  function evoThreshold(n) {
+    let total = 0;
+    for (let i = 0; i < n; i++) total += 10 * (Math.floor(i / 3) + 1);
+    return total;
+  }
 
   function resize() {
     const availW = window.innerWidth - 20;
@@ -215,8 +225,8 @@
   window.addEventListener('resize', resize);
 
   function interval() {
-    let v = Math.max(85, 150 - (floor - 1) * 4);
-    v *= Math.pow(1.15, buffs.slow);
+    let v = Math.max(80, 150 - evoLevel * 5);
+    v *= Math.pow(1.15, skills.slow);
     return Math.min(230, v);
   }
 
@@ -224,14 +234,14 @@
     if (obstacles.some(o => o.x === x && o.y === y)) return false;
     if (snake.some(s => s.x === x && s.y === y)) return false;
     if (food && food.x === x && food.y === y) return false;
-    if (bonusFoods.some(b => b.x === x && b.y === y)) return false;
-    if (portal && portal.x === x && portal.y === y) return false;
+    if (goldFood && goldFood.x === x && goldFood.y === y) return false;
     return true;
   }
 
-  function randomFreeCell() {
+  function randomFreeCell(minHeadDist = 0) {
     for (let tries = 0; tries < 400; tries++) {
       const c = { x: rand(GRID), y: rand(GRID) };
+      if (minHeadDist && manhattan(c, snake[0]) < minHeadDist) continue;
       if (isFree(c.x, c.y)) return c;
     }
     return null;
@@ -239,57 +249,42 @@
 
   function placeFood() { food = randomFreeCell(); }
 
-  function resetRun() {
-    floor = 1; score = 0; totalEaten = 0;
-    buffs = { shield: 0, phase: 0, magnet: 0, gold: 0, slow: 0, trim: 0, resilient: 0, lucky: 0 };
-    const c = Math.floor(GRID / 2);
-    snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
-    scoreEl.textContent = '0';
-    setupFloor();
+  function spawnObstacles(n) {
+    for (let i = 0; i < n && obstacles.length < MAX_OBSTACLES; i++) {
+      const c = randomFreeCell(4); // 离蛇头至少 4 格，避免贴脸杀
+      if (c) obstacles.push(c);
+    }
   }
 
-  function setupFloor() {
-    // 保留身体长度，重新居中摆放
-    const len = Math.min(snake.length, GRID - 4);
+  function resetRun() {
+    score = 0; beans = 0; evoLevel = 0;
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, sweep: 0 };
     const c = Math.floor(GRID / 2);
-    snake = Array.from({ length: len }, (_, i) => ({ x: c - i, y: c }));
+    snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
     nextDir = dir;
-    foodsEaten = 0;
-    foodsNeeded = 4 + floor;
-    resilientUsed = false;
-    portal = null;
-    bonusFoods = [];
-    // 随机障碍：密度随层数增加，出生点附近留空
     obstacles = [];
-    const density = Math.min(0.10, 0.04 + floor * 0.005);
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
-        if (Math.abs(x - c) + Math.abs(y - c) < 5) continue; // 出生保护区
-        if (Math.random() < density) obstacles.push({ x, y });
-      }
-    }
+    goldFood = null;
     placeFood();
-    for (let i = 0; i < buffs.lucky; i++) {
-      const b = randomFreeCell();
-      if (b) bonusFoods.push(b);
-    }
-    floorEl.textContent = floor;
-    updateGoal();
+    scoreEl.textContent = '0';
+    updateEvoHud();
     renderBuffs();
   }
 
-  function updateGoal() { goalEl.textContent = `${Math.min(foodsEaten, foodsNeeded)}/${foodsNeeded}`; }
+  function updateEvoHud() {
+    evoLvEl.textContent = `Lv.${evoLevel}`;
+    evoProgEl.textContent = `${Math.min(beans, evoThreshold(evoLevel + 1))}/${evoThreshold(evoLevel + 1)}`;
+  }
 
   function renderBuffs() {
     buffBar.innerHTML = '';
-    for (const b of BUFF_POOL) {
-      const n = buffs[b.id];
-      if (n > 0 && b.id !== 'trim') {
+    for (const s of SKILL_POOL) {
+      const n = skills[s.id];
+      if (n > 0 && !['trim', 'sweep'].includes(s.id)) {
         const chip = document.createElement('div');
         chip.className = 'buff-chip';
-        chip.textContent = n > 1 ? `${b.icon}×${n}` : b.icon;
-        chip.title = b.name;
+        chip.textContent = n > 1 ? `${s.icon}×${n}` : s.icon;
+        chip.title = s.name;
         buffBar.appendChild(chip);
       }
     }
@@ -303,22 +298,19 @@
       localStorage.setItem('rogue_snake_best', String(best));
       bestEl.textContent = best;
     }
-    el('finalFloor').textContent = floor;
+    el('finalEvo').textContent = `Lv.${evoLevel}`;
+    el('finalBeans').textContent = beans;
     el('finalScore').textContent = score;
-    el('finalEaten').textContent = totalEaten;
     el('newRecord').style.display = isRecord ? 'block' : 'none';
     gameOverScreen.classList.remove('hidden');
   }
 
-  function eatAt(cellPos, value) {
-    score += Math.round(value * (1 + 0.5 * buffs.gold));
+  function eatBean(value) {
+    score += Math.round(value * (1 + 0.5 * skills.gold));
     scoreEl.textContent = score;
-    totalEaten++;
-    foodsEaten++;
-    updateGoal();
-    if (foodsEaten >= foodsNeeded && !portal) {
-      portal = randomFreeCell(); // 开启传送门
-    }
+    beans++;
+    updateEvoHud();
+    if (beans >= evoThreshold(evoLevel + 1)) evolve();
   }
 
   function tick() {
@@ -328,11 +320,11 @@
     // 边界处理
     const out = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID;
     if (out) {
-      if (buffs.phase > 0) {
+      if (skills.phase > 0) {
         head.x = (head.x + GRID) % GRID;
         head.y = (head.y + GRID) % GRID;
-      } else if (buffs.shield > 0) {
-        buffs.shield--; renderBuffs();
+      } else if (skills.shield > 0) {
+        skills.shield--; renderBuffs();
         return; // 圣盾抵挡，原地不动一回合
       } else return die();
     }
@@ -340,8 +332,8 @@
     // 撞障碍
     const oIdx = obstacles.findIndex(o => same(o, head));
     if (oIdx >= 0) {
-      if (buffs.shield > 0) {
-        buffs.shield--; renderBuffs();
+      if (skills.shield > 0) {
+        skills.shield--; renderBuffs();
         obstacles.splice(oIdx, 1); // 圣盾撞碎障碍
       } else return die();
     }
@@ -349,11 +341,11 @@
     // 撞到自己
     const sIdx = snake.findIndex(s => same(s, head));
     if (sIdx >= 0) {
-      if (buffs.resilient > 0 && !resilientUsed) {
-        resilientUsed = true;
+      if (skills.resilient > 0) {
+        skills.resilient--; renderBuffs();
         snake.length = Math.max(1, sIdx); // 断尾求生
-      } else if (buffs.shield > 0) {
-        buffs.shield--; renderBuffs();
+      } else if (skills.shield > 0) {
+        skills.shield--; renderBuffs();
         snake.length = Math.max(1, sIdx);
       } else return die();
     }
@@ -361,58 +353,64 @@
     snake.unshift(head);
     let grew = false;
 
-    // 吃普通食物（含磁铁吸附）
-    if (food && (same(head, food) || (buffs.magnet > 0 && manhattan(head, food) <= buffs.magnet))) {
-      eatAt(food, 10);
+    // 吃普通豆子（含磁铁吸附）
+    if (food && (same(head, food) || (skills.magnet > 0 && manhattan(head, food) <= skills.magnet))) {
+      eatBean(10);
       grew = true;
       placeFood();
+      // 幸运星：概率刷出金豆
+      if (skills.lucky > 0 && !goldFood && Math.random() < Math.min(0.8, 0.3 * skills.lucky)) {
+        goldFood = randomFreeCell();
+      }
     }
-    // 吃金色食物
-    const bIdx = bonusFoods.findIndex(b => same(head, b) || (buffs.magnet > 0 && manhattan(head, b) <= buffs.magnet));
-    if (bIdx >= 0) {
-      eatAt(bonusFoods[bIdx], 30);
+    // 吃金豆
+    if (goldFood && (same(head, goldFood) || (skills.magnet > 0 && manhattan(head, goldFood) <= skills.magnet))) {
+      eatBean(50);
       grew = true;
-      bonusFoods.splice(bIdx, 1);
-    }
-    // 进入传送门
-    if (portal && same(head, portal)) {
-      return floorCleared();
+      goldFood = null;
     }
     if (!grew) snake.pop();
   }
 
-  function floorCleared() {
+  function evolve() {
     drafting = true;
-    el('draftFloor').textContent = floor;
+    evoLevel++;
+    updateEvoHud();
+    el('draftLv').textContent = evoLevel;
     // 随机抽 3 张不同的卡
-    const pool = [...BUFF_POOL];
+    const pool = [...SKILL_POOL];
     const picks = [];
     for (let i = 0; i < 3 && pool.length; i++) {
       picks.push(pool.splice(rand(pool.length), 1)[0]);
     }
     cardRow.innerHTML = '';
-    picks.forEach((b, i) => {
+    picks.forEach((s, i) => {
       const card = document.createElement('div');
       card.className = 'card';
-      card.innerHTML = `<div class="icon">${b.icon}</div><div class="name">${b.name}</div><div class="desc">${b.desc}</div>${isTouch ? '' : `<div class="key">按 ${i + 1}</div>`}`;
-      card.addEventListener('click', () => chooseBuff(b));
+      const costHtml = s.cost === 0
+        ? '<div class="cost free">无代价</div>'
+        : `<div class="cost">代价：生成 ${s.cost} 个障碍</div>`;
+      card.innerHTML = `<div class="icon">${s.icon}</div><div class="name">${s.name}</div><div class="desc">${s.desc}</div>${costHtml}${isTouch ? '' : `<div class="key">按 ${i + 1}</div>`}`;
+      card.addEventListener('click', () => chooseSkill(s));
       cardRow.appendChild(card);
     });
     draftScreen.dataset.picks = JSON.stringify(picks.map(p => p.id));
     draftScreen.classList.remove('hidden');
   }
 
-  function chooseBuff(b) {
+  function chooseSkill(s) {
     if (!drafting) return;
-    if (b.id === 'trim') {
+    if (s.id === 'trim') {
       snake = snake.slice(0, Math.max(3, Math.ceil(snake.length * 0.7)));
+    } else if (s.id === 'sweep') {
+      obstacles = [];
     } else {
-      buffs[b.id]++;
+      skills[s.id]++;
     }
+    spawnObstacles(s.cost);
     drafting = false;
     draftScreen.classList.add('hidden');
-    floor++;
-    setupFloor();
+    renderBuffs();
     lastTick = performance.now();
   }
 
@@ -447,23 +445,7 @@
       ctx.fill();
     }
     ctx.restore();
-    // 传送门（紫色旋涡）
-    if (portal) {
-      const px = portal.x * cell + cell / 2, py = portal.y * cell + cell / 2;
-      const rot = now / 300;
-      ctx.save();
-      ctx.shadowColor = '#b46bff';
-      ctx.shadowBlur = 18;
-      ctx.strokeStyle = '#b46bff';
-      ctx.lineWidth = 2.5;
-      for (let k = 0; k < 3; k++) {
-        ctx.beginPath();
-        ctx.arc(px, py, cell * 0.16 + k * cell * 0.11, rot + k, rot + k + Math.PI * 1.3);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    // 普通食物
+    // 普通豆子
     if (food) {
       const pulse = 0.75 + 0.25 * Math.sin(now / 200);
       ctx.save();
@@ -475,15 +457,15 @@
       ctx.fill();
       ctx.restore();
     }
-    // 金色食物
-    for (const b of bonusFoods) {
+    // 金豆
+    if (goldFood) {
       const pulse = 0.75 + 0.25 * Math.sin(now / 180);
       ctx.save();
       ctx.shadowColor = '#ffb84d';
-      ctx.shadowBlur = 16 * pulse;
+      ctx.shadowBlur = 18 * pulse;
       ctx.fillStyle = '#ffb84d';
       ctx.beginPath();
-      ctx.arc(b.x * cell + cell / 2, b.y * cell + cell / 2, cell * 0.3 * pulse + cell * 0.1, 0, Math.PI * 2);
+      ctx.arc(goldFood.x * cell + cell / 2, goldFood.y * cell + cell / 2, cell * 0.34 * pulse + cell * 0.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -492,10 +474,10 @@
       const t = i / snake.length;
       const isHead = i === 0;
       ctx.save();
-      ctx.shadowColor = buffs.phase > 0 ? '#4db8ff' : '#5df2c6';
+      ctx.shadowColor = skills.phase > 0 ? '#4db8ff' : '#5df2c6';
       ctx.shadowBlur = isHead ? 14 : 6;
       ctx.fillStyle = isHead
-        ? (buffs.phase > 0 ? '#bfe6ff' : '#a5ffe4')
+        ? (skills.phase > 0 ? '#bfe6ff' : '#a5ffe4')
         : `rgba(93, 242, 198, ${1 - t * 0.65})`;
       const pad = isHead ? 1.5 : 2.5;
       roundRect(seg.x * cell + pad, seg.y * cell + pad, cell - pad * 2, cell - pad * 2, cell * 0.28);
@@ -503,7 +485,7 @@
       ctx.restore();
       if (isHead) {
         // 圣盾光环
-        if (buffs.shield > 0) {
+        if (skills.shield > 0) {
           ctx.save();
           ctx.strokeStyle = 'rgba(255, 216, 107, .85)';
           ctx.shadowColor = '#ffd86b';
@@ -567,8 +549,8 @@
     if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
     if (drafting && ['1','2','3'].includes(k)) {
       const picks = JSON.parse(draftScreen.dataset.picks || '[]');
-      const b = BUFF_POOL.find(x => x.id === picks[+k - 1]);
-      if (b) chooseBuff(b);
+      const s = SKILL_POOL.find(x => x.id === picks[+k - 1]);
+      if (s) chooseSkill(s);
       return;
     }
     if (k === 'arrowup' || k === 'w') setDir(0, -1);
