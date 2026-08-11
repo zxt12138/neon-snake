@@ -201,6 +201,7 @@
     { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',     cost: 4 },
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '黄金豆出现概率 +3%（可叠加）',        cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '过期豆出现概率 +6%（可叠加）',        cost: 2 },
+    { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '吃到过期豆时，长度额外 -1（可叠加）',  cost: 2 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -292,7 +293,7 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, diet: 0, sweep: 0 };
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -348,8 +349,9 @@
     if (t.growth > 0) {
       pendingGrow += t.growth;
     } else if (t.growth < 0) {
-      // 过期豆：缩短身体（保底最小长度）
-      for (let i = 0; i < -t.growth && snake.length > MIN_LENGTH; i++) snake.pop();
+      // 过期豆：缩短身体（保底最小长度）；「我要减肥!」每层额外 -1
+      const shrink = -t.growth + skills.diet;
+      for (let i = 0; i < shrink && snake.length > MIN_LENGTH; i++) snake.pop();
     }
     if (beanCount >= evoThreshold(evoLevel + 1)) evolve();
   }
