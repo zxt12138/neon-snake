@@ -185,10 +185,10 @@
     golden: { score: 50, growth: 2,  color: '#ffb84d' },  // 黄金豆（金）
     stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
   };
-  // 豆袋模型（加权随机）：初始袋中 98 普通 + 1 黄金 + 1 过期，共 100 颗
+  // 豆袋模型（加权随机）：初始袋中 90 普通 + 5 黄金 + 5 过期，共 100 颗
   // 幸运星每层往袋中 +3 颗黄金豆，食欲不振每层 +10 颗过期豆
-  // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 4/103）
-  const BAG_BASE = { normal: 98, golden: 1, stale: 1 };
+  // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 8/103）
+  const BAG_BASE = { normal: 90, golden: 5, stale: 5 };
   const LUCKY_BONUS = 3;     // 幸运星每层袋中 +3 黄金豆
   const APPETITE_BONUS = 10; // 食欲不振每层袋中 +10 过期豆
   const DIET_BAG_BONUS = 5;  // 我要减肥!每层袋中 +5 过期豆
@@ -399,7 +399,7 @@
 
     snake.unshift(head);
 
-    // 吃豆（含磁铁吸附）
+    // 吃豆（含磁铁吸附，可一次吸多颗）
     const eaten = beans.filter(b =>
       same(head, b) || (skills.magnet > 0 && manhattan(head, b) <= skills.magnet));
     for (const b of eaten) {
