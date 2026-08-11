@@ -206,7 +206,7 @@
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +10（可叠加）',            cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
-    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +1、其它豆积分 -1，袋中过期豆 +2（可叠加）', cost: 1 },
+    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2、其它豆积分 -2，袋中过期豆 +2（可叠加）', cost: 1 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -344,8 +344,8 @@
 
   function eatBean(bean) {
     const t = BEAN_TYPES[bean.type];
-    // 饥荒：过期豆积分+1，其它豆积分-1（保底 0 分）
-    const base = bean.type === 'stale' ? t.score + skills.famine : Math.max(0, t.score - skills.famine);
+    // 饥荒：过期豆积分+2，其它豆积分-2（保底 0 分）
+    const base = bean.type === 'stale' ? t.score + 2 * skills.famine : Math.max(0, t.score - 2 * skills.famine);
     score += Math.round(base * (1 + 0.5 * skills.gold));
     scoreEl.textContent = score;
     beanCount++;
