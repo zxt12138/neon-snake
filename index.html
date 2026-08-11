@@ -185,10 +185,12 @@
     golden: { score: 50, growth: 2,  color: '#ffb84d' },  // 黄金豆（金）
     stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
   };
-  // 基础刷新概率
-  const BASE_PROB = { golden: 0.01, stale: 0.01 };
-  const LUCKY_BONUS = 0.03;    // 幸运星每层 +3% 黄金豆
-  const APPETITE_BONUS = 0.06; // 食欲不振每层 +6% 过期豆
+  // 豆袋模型（加权随机）：初始袋中 98 普通 + 1 黄金 + 1 过期，共 100 颗
+  // 幸运星每层往袋中 +3 颗黄金豆，食欲不振每层 +6 颗过期豆
+  // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 4/103）
+  const BAG_BASE = { normal: 98, golden: 1, stale: 1 };
+  const LUCKY_BONUS = 3;    // 幸运星每层袋中 +3 黄金豆
+  const APPETITE_BONUS = 6; // 食欲不振每层袋中 +6 过期豆
 
   // ============ 技能定义（cost = 生成的障碍数） ============
   const SKILL_POOL = [
@@ -199,8 +201,8 @@
     { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体',                 cost: 2 },
     { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',              cost: 5 },
     { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',     cost: 4 },
-    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '黄金豆出现概率 +3%（可叠加）',        cost: 3 },
-    { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '过期豆出现概率 +6%（可叠加）',        cost: 2 },
+    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
+    { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +6（可叠加）',             cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '吃到过期豆时，长度额外 -1（可叠加）',  cost: 2 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
@@ -227,17 +229,14 @@
     return total;
   }
 
-  function beanProb() {
-    const golden = Math.min(0.9, BASE_PROB.golden + LUCKY_BONUS * skills.lucky);
-    const stale = Math.min(0.9 - golden, BASE_PROB.stale + APPETITE_BONUS * skills.appetite);
-    return { golden, stale, normal: 1 - golden - stale };
-  }
-
   function rollBeanType() {
-    const p = beanProb();
-    const r = Math.random();
-    if (r < p.golden) return 'golden';
-    if (r < p.golden + p.stale) return 'stale';
+    const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky;
+    const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite;
+    const total = BAG_BASE.normal + goldenW + staleW;
+    let r = Math.random() * total;
+    if (r < goldenW) return 'golden';
+    r -= goldenW;
+    if (r < staleW) return 'stale';
     return 'normal';
   }
 
