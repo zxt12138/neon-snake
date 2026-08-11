@@ -186,11 +186,13 @@
     stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
   };
   // 豆袋模型（加权随机）：初始袋中 98 普通 + 1 黄金 + 1 过期，共 100 颗
-  // 幸运星每层往袋中 +3 颗黄金豆，食欲不振每层 +6 颗过期豆
+  // 幸运星每层往袋中 +3 颗黄金豆，食欲不振每层 +10 颗过期豆
   // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 4/103）
   const BAG_BASE = { normal: 98, golden: 1, stale: 1 };
-  const LUCKY_BONUS = 3;    // 幸运星每层袋中 +3 黄金豆
-  const APPETITE_BONUS = 6; // 食欲不振每层袋中 +6 过期豆
+  const LUCKY_BONUS = 3;     // 幸运星每层袋中 +3 黄金豆
+  const APPETITE_BONUS = 10; // 食欲不振每层袋中 +10 过期豆
+  const DIET_BAG_BONUS = 5;  // 我要减肥!每层袋中 +5 过期豆
+  const FAMINE_BAG_BONUS = 2;// 饥荒每层袋中 +2 过期豆
 
   // ============ 技能定义（cost = 生成的障碍数） ============
   const SKILL_POOL = [
@@ -202,9 +204,9 @@
     { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',              cost: 5 },
     { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',     cost: 4 },
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
-    { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +6（可叠加）',             cost: 2 },
-    { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +1（可叠加）', cost: 2 },
-    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +1、其它豆积分 -1，袋中过期豆 +1（可叠加）', cost: 1 },
+    { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +10（可叠加）',            cost: 2 },
+    { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
+    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +1、其它豆积分 -1，袋中过期豆 +2（可叠加）', cost: 1 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -232,7 +234,7 @@
 
   function rollBeanType() {
     const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky;
-    const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + 1 * skills.diet + 1 * skills.famine;
+    const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + DIET_BAG_BONUS * skills.diet + FAMINE_BAG_BONUS * skills.famine;
     const total = BAG_BASE.normal + goldenW + staleW;
     let r = Math.random() * total;
     if (r < goldenW) return 'golden';
