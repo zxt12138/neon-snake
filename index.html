@@ -168,7 +168,7 @@
 <script>
 (() => {
   const GRID = 21;
-  const BEAN_COUNT = 3;      // 地图上常驻豆子数
+  const BEAN_COUNT = 1;      // 地图上常驻豆子数（每次 1 颗，吃掉后按概率刷新种类）
   const MIN_LENGTH = 2;      // 蛇身最小长度
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -393,7 +393,7 @@
 
     snake.unshift(head);
 
-    // 吃豆（含磁铁吸附，可一次吸多颗）
+    // 吃豆（含磁铁吸附）
     const eaten = beans.filter(b =>
       same(head, b) || (skills.magnet > 0 && manhattan(head, b) <= skills.magnet));
     for (const b of eaten) {
