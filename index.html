@@ -204,6 +204,7 @@
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +6（可叠加）',             cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +1（可叠加）', cost: 2 },
+    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +1、其它豆积分 -1，袋中过期豆 +1（可叠加）', cost: 1 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -231,7 +232,7 @@
 
   function rollBeanType() {
     const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky;
-    const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + 1 * skills.diet;
+    const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + 1 * skills.diet + 1 * skills.famine;
     const total = BAG_BASE.normal + goldenW + staleW;
     let r = Math.random() * total;
     if (r < goldenW) return 'golden';
@@ -292,7 +293,7 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, diet: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, sweep: 0 };
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -341,7 +342,9 @@
 
   function eatBean(bean) {
     const t = BEAN_TYPES[bean.type];
-    score += Math.round(t.score * (1 + 0.5 * skills.gold));
+    // 饥荒：过期豆积分+1，其它豆积分-1（保底 0 分）
+    const base = bean.type === 'stale' ? t.score + skills.famine : Math.max(0, t.score - skills.famine);
+    score += Math.round(base * (1 + 0.5 * skills.gold));
     scoreEl.textContent = score;
     beanCount++;
     updateEvoHud();
