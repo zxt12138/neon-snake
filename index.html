@@ -140,7 +140,11 @@
       <div class="subtitle">ROGUE SNAKE · 进化</div>
       <button class="btn" id="startBtn">开始冒险</button>
       <div class="hint" id="controlHint"></div>
-      <div class="hint">吞食豆子积累进化（10 / 20 / 30 / 50 / 70 / 90 / 120…）<br>每次进化三选一技能 · 技能的代价是地图上生成障碍<br>撞墙即死 · 障碍会不断累积</div>
+      <div class="hint">
+        红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
+        吞食豆子积累进化（10 / 20 / 30 / 50 / 70 / 90 / 120…）<br>
+        每次进化三选一技能 · 技能的代价是地图上生成障碍
+      </div>
     </div>
 
     <div class="overlay hidden" id="draftScreen">
@@ -164,6 +168,8 @@
 <script>
 (() => {
   const GRID = 21;
+  const BEAN_COUNT = 3;      // 地图上常驻豆子数
+  const MIN_LENGTH = 2;      // 蛇身最小长度
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const el = id => document.getElementById(id);
@@ -173,24 +179,36 @@
   const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   el('controlHint').textContent = isTouch ? '手指滑动屏幕控制方向' : '方向键 / WASD 移动 · 空格暂停 · 数字键 1/2/3 选卡';
 
+  // ============ 豆子种类 ============
+  const BEAN_TYPES = {
+    normal: { score: 10, growth: 1,  color: '#ff5d7a' },  // 普通豆（红）
+    golden: { score: 50, growth: 2,  color: '#ffb84d' },  // 黄金豆（金）
+    stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
+  };
+  // 基础刷新概率
+  const BASE_PROB = { golden: 0.01, stale: 0.01 };
+  const LUCKY_BONUS = 0.03;    // 幸运星每层 +3% 黄金豆
+  const APPETITE_BONUS = 0.06; // 食欲不振每层 +6% 过期豆
+
   // ============ 技能定义（cost = 生成的障碍数） ============
   const SKILL_POOL = [
-    { id: 'shield',    icon: '🛡️', name: '圣盾',     desc: '抵挡一次致命碰撞（可叠加）',       cost: 3 },
-    { id: 'magnet',    icon: '🧲', name: '食物磁铁', desc: '靠近的豆子被自动吞食（范围+1）',     cost: 3 },
-    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '豆子得分 +50%（可叠加）',           cost: 4 },
-    { id: 'slow',      icon: '⚓', name: '稳定锚',   desc: '移速 -15%，操控更稳（可叠加）',     cost: 2 },
-    { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体',               cost: 2 },
-    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',            cost: 5 },
-    { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',   cost: 4 },
-    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '豆子有 30% 概率变为金豆（+50分）',  cost: 3 },
-    { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',              cost: 0 },
+    { id: 'shield',    icon: '🛡️', name: '圣盾',     desc: '抵挡一次致命碰撞（可叠加）',         cost: 3 },
+    { id: 'magnet',    icon: '🧲', name: '食物磁铁', desc: '靠近的豆子被自动吞食（范围+1）',       cost: 3 },
+    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '豆子得分 +50%（可叠加）',             cost: 4 },
+    { id: 'slow',      icon: '⚓', name: '稳定锚',   desc: '移速 -15%，操控更稳（可叠加）',       cost: 2 },
+    { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体',                 cost: 2 },
+    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',              cost: 5 },
+    { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',     cost: 4 },
+    { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '黄金豆出现概率 +3%（可叠加）',        cost: 3 },
+    { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '过期豆出现概率 +6%（可叠加）',        cost: 2 },
+    { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
 
   // ============ 状态 ============
   let cell = 20, size = 420;
-  let snake, dir, nextDir, obstacles, food, goldFood;
-  let score, best, beans, evoLevel;
+  let snake, dir, nextDir, obstacles, beans;
+  let score, best, beanCount, evoLevel, pendingGrow;
   let skills, alive, started, paused, drafting;
   let lastTick = 0;
 
@@ -206,6 +224,20 @@
     let total = 0;
     for (let i = 0; i < n; i++) total += 10 * (Math.floor(i / 3) + 1);
     return total;
+  }
+
+  function beanProb() {
+    const golden = Math.min(0.9, BASE_PROB.golden + LUCKY_BONUS * skills.lucky);
+    const stale = Math.min(0.9 - golden, BASE_PROB.stale + APPETITE_BONUS * skills.appetite);
+    return { golden, stale, normal: 1 - golden - stale };
+  }
+
+  function rollBeanType() {
+    const p = beanProb();
+    const r = Math.random();
+    if (r < p.golden) return 'golden';
+    if (r < p.golden + p.stale) return 'stale';
+    return 'normal';
   }
 
   function resize() {
@@ -233,8 +265,7 @@
   function isFree(x, y) {
     if (obstacles.some(o => o.x === x && o.y === y)) return false;
     if (snake.some(s => s.x === x && s.y === y)) return false;
-    if (food && food.x === x && food.y === y) return false;
-    if (goldFood && goldFood.x === x && goldFood.y === y) return false;
+    if (beans.some(b => b.x === x && b.y === y)) return false;
     return true;
   }
 
@@ -247,7 +278,10 @@
     return null;
   }
 
-  function placeFood() { food = randomFreeCell(); }
+  function spawnBean() {
+    const c = randomFreeCell();
+    if (c) beans.push({ x: c.x, y: c.y, type: rollBeanType() });
+  }
 
   function spawnObstacles(n) {
     for (let i = 0; i < n && obstacles.length < MAX_OBSTACLES; i++) {
@@ -257,15 +291,15 @@
   }
 
   function resetRun() {
-    score = 0; beans = 0; evoLevel = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, sweep: 0 };
+    score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, sweep: 0 };
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
     nextDir = dir;
     obstacles = [];
-    goldFood = null;
-    placeFood();
+    beans = [];
+    for (let i = 0; i < BEAN_COUNT; i++) spawnBean();
     scoreEl.textContent = '0';
     updateEvoHud();
     renderBuffs();
@@ -273,7 +307,7 @@
 
   function updateEvoHud() {
     evoLvEl.textContent = `Lv.${evoLevel}`;
-    evoProgEl.textContent = `${Math.min(beans, evoThreshold(evoLevel + 1))}/${evoThreshold(evoLevel + 1)}`;
+    evoProgEl.textContent = `${Math.min(beanCount, evoThreshold(evoLevel + 1))}/${evoThreshold(evoLevel + 1)}`;
   }
 
   function renderBuffs() {
@@ -299,18 +333,25 @@
       bestEl.textContent = best;
     }
     el('finalEvo').textContent = `Lv.${evoLevel}`;
-    el('finalBeans').textContent = beans;
+    el('finalBeans').textContent = beanCount;
     el('finalScore').textContent = score;
     el('newRecord').style.display = isRecord ? 'block' : 'none';
     gameOverScreen.classList.remove('hidden');
   }
 
-  function eatBean(value) {
-    score += Math.round(value * (1 + 0.5 * skills.gold));
+  function eatBean(bean) {
+    const t = BEAN_TYPES[bean.type];
+    score += Math.round(t.score * (1 + 0.5 * skills.gold));
     scoreEl.textContent = score;
-    beans++;
+    beanCount++;
     updateEvoHud();
-    if (beans >= evoThreshold(evoLevel + 1)) evolve();
+    if (t.growth > 0) {
+      pendingGrow += t.growth;
+    } else if (t.growth < 0) {
+      // 过期豆：缩短身体（保底最小长度）
+      for (let i = 0; i < -t.growth && snake.length > MIN_LENGTH; i++) snake.pop();
+    }
+    if (beanCount >= evoThreshold(evoLevel + 1)) evolve();
   }
 
   function tick() {
@@ -343,33 +384,30 @@
     if (sIdx >= 0) {
       if (skills.resilient > 0) {
         skills.resilient--; renderBuffs();
-        snake.length = Math.max(1, sIdx); // 断尾求生
+        snake.length = Math.max(MIN_LENGTH, sIdx); // 断尾求生
       } else if (skills.shield > 0) {
         skills.shield--; renderBuffs();
-        snake.length = Math.max(1, sIdx);
+        snake.length = Math.max(MIN_LENGTH, sIdx);
       } else return die();
     }
 
     snake.unshift(head);
-    let grew = false;
 
-    // 吃普通豆子（含磁铁吸附）
-    if (food && (same(head, food) || (skills.magnet > 0 && manhattan(head, food) <= skills.magnet))) {
-      eatBean(10);
-      grew = true;
-      placeFood();
-      // 幸运星：概率刷出金豆
-      if (skills.lucky > 0 && !goldFood && Math.random() < Math.min(0.8, 0.3 * skills.lucky)) {
-        goldFood = randomFreeCell();
-      }
+    // 吃豆（含磁铁吸附，可一次吸多颗）
+    const eaten = beans.filter(b =>
+      same(head, b) || (skills.magnet > 0 && manhattan(head, b) <= skills.magnet));
+    for (const b of eaten) {
+      beans.splice(beans.indexOf(b), 1);
+      eatBean(b);
+      spawnBean();
     }
-    // 吃金豆
-    if (goldFood && (same(head, goldFood) || (skills.magnet > 0 && manhattan(head, goldFood) <= skills.magnet))) {
-      eatBean(50);
-      grew = true;
-      goldFood = null;
+
+    // 长度增长队列
+    if (pendingGrow > 0) {
+      pendingGrow--;
+    } else {
+      snake.pop();
     }
-    if (!grew) snake.pop();
   }
 
   function evolve() {
@@ -401,7 +439,7 @@
   function chooseSkill(s) {
     if (!drafting) return;
     if (s.id === 'trim') {
-      snake = snake.slice(0, Math.max(3, Math.ceil(snake.length * 0.7)));
+      snake = snake.slice(0, Math.max(MIN_LENGTH + 1, Math.ceil(snake.length * 0.7)));
     } else if (s.id === 'sweep') {
       obstacles = [];
     } else {
@@ -445,27 +483,16 @@
       ctx.fill();
     }
     ctx.restore();
-    // 普通豆子
-    if (food) {
-      const pulse = 0.75 + 0.25 * Math.sin(now / 200);
+    // 豆子（按种类着色）
+    for (const b of beans) {
+      const t = BEAN_TYPES[b.type];
+      const pulse = 0.75 + 0.25 * Math.sin(now / 200 + b.x + b.y);
       ctx.save();
-      ctx.shadowColor = '#ff5d7a';
-      ctx.shadowBlur = 16 * pulse;
-      ctx.fillStyle = '#ff5d7a';
+      ctx.shadowColor = t.color;
+      ctx.shadowBlur = (b.type === 'golden' ? 18 : 14) * pulse;
+      ctx.fillStyle = t.color;
       ctx.beginPath();
-      ctx.arc(food.x * cell + cell / 2, food.y * cell + cell / 2, cell * 0.32 * pulse + cell * 0.1, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    // 金豆
-    if (goldFood) {
-      const pulse = 0.75 + 0.25 * Math.sin(now / 180);
-      ctx.save();
-      ctx.shadowColor = '#ffb84d';
-      ctx.shadowBlur = 18 * pulse;
-      ctx.fillStyle = '#ffb84d';
-      ctx.beginPath();
-      ctx.arc(goldFood.x * cell + cell / 2, goldFood.y * cell + cell / 2, cell * 0.34 * pulse + cell * 0.1, 0, Math.PI * 2);
+      ctx.arc(b.x * cell + cell / 2, b.y * cell + cell / 2, cell * 0.3 * pulse + cell * 0.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
