@@ -127,7 +127,7 @@
     <div><div class="label">得分</div><div class="value" id="score">0</div></div>
     <div><div class="label">最高</div><div class="value best" id="best">0</div></div>
     <div><div class="label">进化</div><div class="value evo" id="evoLv">Lv.0</div></div>
-    <div><div class="label">下次进化</div><div class="value" id="evoProg">0/10</div></div>
+    <div><div class="label">下次进化</div><div class="value" id="evoProg">0/5</div></div>
   </div>
   <div id="buffBar"></div>
 
@@ -142,7 +142,7 @@
       <div class="hint" id="controlHint"></div>
       <div class="hint">
         红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
-        吞食豆子积累进化（10 / 20 / 30 / 50 / 70 / 90 / 120…）<br>
+        吞食豆子积累进化（5 / 10 / 15 / 25 / 35 / 45 / 60…）<br>
         每次进化三选一技能 · 技能的代价是地图上生成障碍
       </div>
     </div>
@@ -225,10 +225,10 @@
   const same = (a, b) => a.x === b.x && a.y === b.y;
   const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-  // 进化阈值（累计吞食数）：10,20,30,50,70,90,120,150,180,220…
+  // 进化阈值（累计吞食数）：5,10,15,25,35,45,60,75,90,110…
   function evoThreshold(n) {
     let total = 0;
-    for (let i = 0; i < n; i++) total += 10 * (Math.floor(i / 3) + 1);
+    for (let i = 0; i < n; i++) total += 5 * (Math.floor(i / 3) + 1);
     return total;
   }
 
