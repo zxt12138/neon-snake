@@ -186,10 +186,11 @@
     stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
   };
   // 豆袋模型（加权随机）：初始袋中 90 普通 + 5 黄金 + 5 过期，共 100 颗
-  // 幸运星每层 +3 黄金豆；食欲不振 +10、减肥 +5、饥荒 +2、窜稀 +3 过期豆
+  // 幸运星每层 +3、黄金胃每层 +1 黄金豆；食欲不振 +10、减肥 +5、饥荒 +2、窜稀 +3 过期豆
   // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 8/103）
   const BAG_BASE = { normal: 90, golden: 5, stale: 5 };
   const LUCKY_BONUS = 3;     // 幸运星每层袋中 +3 黄金豆
+  const GOLD_BAG_BONUS = 1;  // 黄金胃每层袋中 +1 黄金豆
   const APPETITE_BONUS = 10; // 食欲不振每层袋中 +10 过期豆
   const DIET_BAG_BONUS = 5;  // 我要减肥!每层袋中 +5 过期豆
   const FAMINE_BAG_BONUS = 2;// 饥荒每层袋中 +2 过期豆
@@ -199,11 +200,10 @@
   const SKILL_POOL = [
     { id: 'shield',    icon: '🛡️', name: '圣盾',     desc: '抵挡一次致命碰撞（可叠加）',         cost: 3 },
     { id: 'magnet',    icon: '🧲', name: '食物磁铁', desc: '靠近的豆子被自动吞食（范围+1）',       cost: 3 },
-    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '豆子得分 +50%（可叠加）',             cost: 4 },
+    { id: 'gold',      icon: '💰', name: '黄金胃',   desc: '豆子得分 +30%，袋中黄金豆 +1（可叠加）', cost: 4 },
     { id: 'slow',      icon: '⚓', name: '稳定锚',   desc: '移速 -15%，操控更稳（可叠加）',       cost: 2 },
     { id: 'trim',      icon: '✂️', name: '瘦身剪',   desc: '立即缩短 30% 的身体',                 cost: 2 },
-    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现',              cost: 5 },
-    { id: 'resilient', icon: '🦎', name: '断尾求生', desc: '获得一次撞身不死的机会，断尾存活',     cost: 4 },
+    { id: 'phase',     icon: '🌀', name: '相位穿越', desc: '穿过边界，从另一侧出现（唯一）',       cost: 5, once: true },
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +10（可叠加）',            cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
@@ -211,6 +211,8 @@
     { id: 'depression', icon: '📉', name: '经济萧条', desc: '每吃 5 颗豆，障碍物变为临时过期豆（每层转化 1 个）', cost: 3 },
     { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -5%（可叠加），袋中过期豆 +3', cost: 1 },
     { id: 'indigestion', icon: '🤮', name: '消化不良', desc: '吃过期豆时 10% 概率拉出临时过期豆（可叠加）', cost: 1 },
+    { id: 'digger',    icon: '⛏️', name: '掘金者',   desc: '生成障碍时，其旁 5% 概率出现临时黄金豆（可叠加）', cost: 2 },
+    { id: 'feast',     icon: '🍖', name: '吃饱喝足', desc: '立刻获得 当前长度 ×10 的积分',         cost: 2 },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -238,7 +240,7 @@
   }
 
   function rollBeanType() {
-    const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky;
+    const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky + GOLD_BAG_BONUS * skills.gold;
     const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + DIET_BAG_BONUS * skills.diet + FAMINE_BAG_BONUS * skills.famine + DIARRHEA_BAG_BONUS * skills.diarrhea;
     const total = BAG_BASE.normal + goldenW + staleW;
     let r = Math.random() * total;
@@ -295,14 +297,29 @@
   function spawnObstacles(n) {
     for (let i = 0; i < n && obstacles.length < MAX_OBSTACLES; i++) {
       const c = randomFreeCell(4); // 离蛇头至少 4 格，避免贴脸杀
-      if (c) obstacles.push(c);
+      if (!c) continue;
+      obstacles.push(c);
+      // 掘金者：每个新生成的障碍物旁 5%×层数 概率出现临时黄金豆
+      if (skills.digger > 0 && Math.random() < Math.min(1, 0.05 * skills.digger)) {
+        spawnTempBean(neighborFreeCell(c), 'golden');
+      }
     }
   }
 
-  // 生成临时过期豆（空心豆：吃掉后不刷新、不计进化）；优先放在指定格子（如刚缩掉的尾巴）
-  function spawnTempBean(prefer) {
+  // 找某格上下左右相邻的空格
+  function neighborFreeCell(c) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dy] of dirs) {
+      const x = c.x + dx, y = c.y + dy;
+      if (x >= 0 && y >= 0 && x < GRID && y < GRID && isFree(x, y)) return { x, y };
+    }
+    return null;
+  }
+
+  // 生成临时豆（空心豆：吃掉后不刷新、不计进化）；优先放在指定格子（如刚缩掉的尾巴）
+  function spawnTempBean(prefer, type = 'stale') {
     const c = prefer && isFree(prefer.x, prefer.y) ? prefer : randomFreeCell();
-    if (c) beans.push({ x: c.x, y: c.y, type: 'stale', temp: true });
+    if (c) beans.push({ x: c.x, y: c.y, type, temp: true });
   }
 
   // 经济萧条：每层技能把 1 个障碍物变为临时过期豆
@@ -315,7 +332,7 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, resilient: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, depression: 0, diarrhea: 0, indigestion: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, sweep: 0 };
     slowStacks = 0;
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
@@ -338,7 +355,7 @@
     buffBar.innerHTML = '';
     for (const s of SKILL_POOL) {
       const n = skills[s.id];
-      if (n > 0 && !['trim', 'sweep'].includes(s.id)) {
+      if (n > 0 && !['trim', 'sweep', 'feast'].includes(s.id)) {
         const chip = document.createElement('div');
         chip.className = 'buff-chip';
         chip.textContent = n > 1 ? `${s.icon}×${n}` : s.icon;
@@ -374,7 +391,7 @@
     const t = BEAN_TYPES[bean.type];
     // 饥荒：过期豆积分+2，其它豆积分-2（保底 0 分）
     const base = bean.type === 'stale' ? t.score + 2 * skills.famine : Math.max(0, t.score - 2 * skills.famine);
-    score += Math.round(base * (1 + 0.5 * skills.gold));
+    score += Math.round(base * (1 + 0.3 * skills.gold)); // 黄金胃：每层 +30%
     scoreEl.textContent = score;
     if (!bean.temp) { // 临时过期豆不计入进化
       beanCount++;
@@ -434,12 +451,9 @@
     // 撞到自己
     const sIdx = snake.findIndex(s => same(s, head));
     if (sIdx >= 0) {
-      if (skills.resilient > 0) {
-        skills.resilient--; renderBuffs();
-        snake.length = Math.max(MIN_LENGTH, sIdx); // 断尾求生
-      } else if (skills.shield > 0) {
+      if (skills.shield > 0) {
         skills.shield--; renderBuffs();
-        snake.length = Math.max(MIN_LENGTH, sIdx);
+        snake.length = Math.max(MIN_LENGTH, sIdx); // 圣盾断尾保命
       } else return die();
     }
 
@@ -467,8 +481,8 @@
     evoLevel++;
     updateEvoHud();
     el('draftLv').textContent = evoLevel;
-    // 随机抽 3 张不同的卡
-    const pool = [...SKILL_POOL];
+    // 随机抽 3 张不同的卡；唯一技能（相位穿越）拿到后不再出现
+    const pool = SKILL_POOL.filter(s => !s.once || skills[s.id] === 0);
     const picks = [];
     for (let i = 0; i < 3 && pool.length; i++) {
       picks.push(pool.splice(rand(pool.length), 1)[0]);
@@ -494,6 +508,9 @@
       snake = snake.slice(0, Math.max(MIN_LENGTH + 1, Math.ceil(snake.length * 0.7)));
     } else if (s.id === 'sweep') {
       obstacles = [];
+    } else if (s.id === 'feast') {
+      score += snake.length * 10; // 吃饱喝足：一次性积分
+      scoreEl.textContent = score;
     } else {
       skills[s.id]++;
     }
