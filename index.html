@@ -144,7 +144,7 @@
         红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
         吞食豆子积累进化（5 / 10 / 15 / 25 / 35 / 45 / 60…）<br>
         每次进化三选一技能 · 技能的代价是地图上生成障碍<br>
-        吃豆会加速：普通/过期豆 +1%，黄金豆 +3%
+        吃豆会加速：普通/过期豆 +0.5%，黄金豆 +2%
       </div>
     </div>
 
@@ -224,7 +224,7 @@
   let score, best, beanCount, evoLevel, pendingGrow;
   let skills, alive, started, paused, drafting;
   let slowStacks;  // 窜稀减速层数
-  let hasteStacks; // 吃豆加速层数（每层 +1%）
+  let hasteStacks; // 吃豆加速层数（每层 +0.5%）
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -257,7 +257,6 @@
     const availH = window.innerHeight - 170;
     size = Math.max(240, Math.min(availW, availH, 560));
     cell = Math.floor(size / GRID);
-    size = cell * GRID;
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = size + 'px';
     canvas.style.height = size + 'px';
@@ -269,8 +268,8 @@
   window.addEventListener('resize', resize);
 
   function interval() {
-    // 基础速度随进化提升；吃豆加速：普通/过期豆 +1%，黄金豆 +3%（最快 80ms）
-    let v = Math.max(80, (150 - evoLevel * 5) * Math.pow(0.99, hasteStacks));
+    // 基础速度随进化提升；吃豆加速：普通/过期豆 +0.5%，黄金豆 +2%（最快 80ms）
+    let v = Math.max(80, (150 - evoLevel * 5) * Math.pow(0.995, hasteStacks));
     v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
     v *= Math.pow(1.01, slowStacks);    // 窜稀减速
     return Math.min(230, v);
@@ -404,7 +403,7 @@
     const base = bean.type === 'stale' ? t.score + 2 * skills.famine : Math.max(0, t.score - 2 * skills.famine);
     score += Math.round(base * (1 + 0.3 * skills.gold)); // 黄金胃：每层 +30%
     scoreEl.textContent = score;
-    hasteStacks += bean.type === 'golden' ? 3 : 1; // 吃豆加速：黄金 +3%，其它 +1%
+    hasteStacks += bean.type === 'golden' ? 4 : 1; // 吃豆加速：黄金 +2%（4层），其它 +0.5%（1层）
     renderBuffs();
     if (!bean.temp) { // 临时过期豆不计入进化
       beanCount++;
