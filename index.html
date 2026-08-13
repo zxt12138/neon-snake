@@ -254,9 +254,10 @@
 
   function resize() {
     const availW = window.innerWidth - 20;
-    const availH = window.innerHeight - 170;
-    size = Math.max(240, Math.min(availW, availH, 560));
+    const availH = window.innerHeight - 150;
+    size = Math.max(240, Math.min(availW, availH, 720));
     cell = Math.floor(size / GRID);
+    size = cell * GRID;
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = size + 'px';
     canvas.style.height = size + 'px';
