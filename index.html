@@ -143,8 +143,7 @@
       <div class="hint">
         红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
         吞食豆子积累进化（5 / 10 / 15 / 25 / 35 / 45 / 60…）<br>
-        每次进化三选一技能 · 技能的代价是地图上生成障碍<br>
-        吃豆会加速：身体每增长 5 节，移速 +1%
+        每次进化三选一技能 · 技能的代价是地图上生成障碍
       </div>
     </div>
 
@@ -210,7 +209,7 @@
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
     { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2、其它豆积分 -2，袋中过期豆 +2（可叠加）', cost: 1 },
     { id: 'depression', icon: '📉', name: '经济萧条', desc: '每吃 5 颗豆，障碍物变为临时过期豆（每层转化 1 个）', cost: 3 },
-    { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -1%（可叠加），袋中过期豆 +3', cost: 1 },
+    { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -5%（可叠加），袋中过期豆 +3', cost: 1 },
     { id: 'indigestion', icon: '🤮', name: '消化不良', desc: '吃过期豆时 10% 概率拉出临时过期豆（可叠加）', cost: 1 },
     { id: 'digger',    icon: '⛏️', name: '掘金者',   desc: '生成障碍时，其旁 5% 概率出现临时黄金豆（可叠加）', cost: 2 },
     { id: 'feast',     icon: '🍖', name: '吃饱喝足', desc: '立刻获得 当前长度 ×10 的积分',         cost: 2 },
@@ -268,10 +267,10 @@
   window.addEventListener('resize', resize);
 
   function interval() {
-    // 基础速度随进化提升；长度加速：身体每 5 节 +1%（最快 80ms）
-    let v = Math.max(80, (150 - evoLevel * 5) * Math.pow(0.99, Math.floor(snake.length / 5)));
+    // 基础速度随进化提升（每级 -5ms，最快 80ms）；无其它自动加速
+    let v = Math.max(80, 150 - evoLevel * 5);
     v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
-    v *= Math.pow(1.01, slowStacks);    // 窜稀减速
+    v *= Math.pow(1.05, slowStacks);    // 窜稀减速
     return Math.min(230, v);
   }
 
@@ -370,14 +369,6 @@
       chip.className = 'buff-chip';
       chip.textContent = `🐌×${slowStacks}`;
       chip.title = '窜稀减速';
-      buffBar.appendChild(chip);
-    }
-    const hasteN = Math.floor(snake.length / 5);
-    if (hasteN > 0) { // 长度加速指示
-      const chip = document.createElement('div');
-      chip.className = 'buff-chip';
-      chip.textContent = `🚀×${hasteN}`;
-      chip.title = '长度加速（每 5 节 +1%）';
       buffBar.appendChild(chip);
     }
   }
