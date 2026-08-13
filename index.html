@@ -143,7 +143,8 @@
       <div class="hint">
         红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
         吞食豆子积累进化（5 / 10 / 15 / 25 / 35 / 45 / 60…）<br>
-        每次进化三选一技能 · 技能的代价是地图上生成障碍
+        每次进化三选一技能 · 技能的代价是地图上生成障碍<br>
+        吃豆会加速：普通/过期豆 +5%，黄金豆 +10%
       </div>
     </div>
 
@@ -222,7 +223,8 @@
   let snake, dir, nextDir, obstacles, beans;
   let score, best, beanCount, evoLevel, pendingGrow;
   let skills, alive, started, paused, drafting;
-  let slowStacks; // 窜稀减速层数
+  let slowStacks;  // 窜稀减速层数
+  let hasteStacks; // 吃豆加速层数（每层 +5%）
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -267,9 +269,10 @@
   window.addEventListener('resize', resize);
 
   function interval() {
-    let v = Math.max(80, 150 - evoLevel * 5);
-    v *= Math.pow(1.15, skills.slow);
-    v *= Math.pow(1.05, slowStacks); // 窜稀：吃豆叠加减速
+    // 基础速度随进化提升；吃豆加速：普通/过期豆 +5%，黄金豆 +10%（最快 80ms）
+    let v = Math.max(80, (150 - evoLevel * 5) * Math.pow(0.95, hasteStacks));
+    v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
+    v *= Math.pow(1.05, slowStacks);    // 窜稀减速
     return Math.min(230, v);
   }
 
@@ -334,6 +337,7 @@
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
     skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, sweep: 0 };
     slowStacks = 0;
+    hasteStacks = 0;
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -370,6 +374,13 @@
       chip.title = '窜稀减速';
       buffBar.appendChild(chip);
     }
+    if (hasteStacks > 0) { // 吃豆加速指示
+      const chip = document.createElement('div');
+      chip.className = 'buff-chip';
+      chip.textContent = `🚀×${hasteStacks}`;
+      chip.title = '吃豆加速';
+      buffBar.appendChild(chip);
+    }
   }
 
   function die() {
@@ -393,6 +404,8 @@
     const base = bean.type === 'stale' ? t.score + 2 * skills.famine : Math.max(0, t.score - 2 * skills.famine);
     score += Math.round(base * (1 + 0.3 * skills.gold)); // 黄金胃：每层 +30%
     scoreEl.textContent = score;
+    hasteStacks += bean.type === 'golden' ? 2 : 1; // 吃豆加速：黄金 +10%，其它 +5%
+    renderBuffs();
     if (!bean.temp) { // 临时过期豆不计入进化
       beanCount++;
       updateEvoHud();
