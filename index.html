@@ -225,6 +225,7 @@
     { id: 'feast',     icon: '🍖', name: '吃饱喝足', desc: '立刻获得 当前长度 ×10 的积分',         cost: 2 },
     { id: 'accumulate', icon: '🐷', name: '积少成多', desc: '每吃 10 颗过期豆，过期豆积分 +1（可叠加）', cost: 2 },
     { id: 'bounty',    icon: '🎯', name: '赏金任务', desc: '出现金色路线，完美走完得厚分，失败则永远失去（唯一）', cost: 3, once: true },
+    { id: 'voyage',    icon: '🗺️', name: '航海图',   desc: '每吃 3 颗黄金豆：暴击率 +1%、袋中黄金豆 +1、草帽豆积分 +5（可叠加）', cost: 2 },
     { id: 'hat',       icon: '👒', name: '草帽的传承', desc: '解锁草帽豆：每次进化后刷新，吃后三选一永久强化它（唯一）', cost: 3, once: true },
     { id: 'beans2',    icon: '🫘', name: '2豆流',    desc: '场上同时存在 2 颗豆（独立随机），吃一颗后其余消失并刷新（唯一，解锁3豆流）', cost: 3, once: true },
     { id: 'beans3',    icon: '🫘', name: '3豆流',    desc: '场上同时存在 3 颗豆（独立随机），吃一颗后其余消失并刷新（唯一）', cost: 4, once: true, requires: 'beans2' },
@@ -260,6 +261,7 @@
   let slowStacks;  // 窜稀减速层数
   let nextWallAt;  // 下一个诅咒的分数里程碑（每 1000 分一次）
   let staleEaten;  // 积少成多：已吃过期豆计数
+  let goldenEaten; // 航海图：已吃黄金豆计数（每 3 颗触发一次）
   let bounty, bountyLevel, bountyTimer, bountyDead; // 赏金任务状态
   let fx;          // 飘字特效（得分/暴击提示）
   let curses, cursePending, evoPending, moveCount; // 诅咒系统状态
@@ -282,7 +284,7 @@
 
   function rollBeanType() {
     const normalW = Math.max(20, Math.round(BAG_BASE.normal * Math.pow(0.95, skills.refine))); // 精致：每层普通豆 -5%，保底权重 20
-    const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky + GOLD_BAG_BONUS * skills.gold;
+    const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky + GOLD_BAG_BONUS * skills.gold + Math.floor(goldenEaten / 3) * skills.voyage; // 航海图：每 3 颗黄金豆袋中 +1
     const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + DIET_BAG_BONUS * skills.diet + FAMINE_BAG_BONUS * skills.famine + DIARRHEA_BAG_BONUS * skills.diarrhea;
     const total = normalW + goldenW + staleW;
     let r = Math.random() * total;
@@ -290,6 +292,11 @@
     r -= goldenW;
     if (r < staleW) return 'stale';
     return 'normal';
+  }
+
+  // 暴击率：小幸运每层 +5%，航海图每吃 3 颗黄金豆 +1%×层数（上限 100%）
+  function critChance() {
+    return Math.min(1, 0.05 * skills.crit + 0.01 * Math.floor(goldenEaten / 3) * skills.voyage);
   }
 
   function resize() {
@@ -514,10 +521,11 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, hat: 0, beans2: 0, beans3: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, voyage: 0, hat: 0, beans2: 0, beans3: 0, sweep: 0 };
     slowStacks = 0;
     nextWallAt = 1000;
     staleEaten = 0;
+    goldenEaten = 0;
     bounty = null; bountyLevel = 1; bountyTimer = 0; bountyDead = false;
     fx = [];
     curses = { wall: 0, siege: 0, rotland: 0, collapse: 0, inflation: 0, headwind: 0, fog: 0, rot: 0, toll: 0 };
@@ -594,7 +602,7 @@
       base *= Math.pow(0.95, curses.rot * Math.floor((moveCount - (bean.born || 0)) / 10)); // 腐烂
       base *= Math.pow(0.9, curses.inflation); // 通胀
       let gain = Math.max(1, Math.round(base * (1 + 0.3 * skills.gold))); // 黄金胃
-      const crited = skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit); // 小幸运
+      const crited = Math.random() < critChance(); // 小幸运 + 航海图
       if (crited) gain *= 2;
       score += gain;
       fx.push({ x: bean.x, y: bean.y, text: crited ? `暴击 +${gain}!` : `+${gain}`, color: crited ? '#ffd86b' : '#f2e3b6', until: performance.now() + 800 });
@@ -622,8 +630,8 @@
     base *= Math.pow(0.95, curses.rot * Math.floor((moveCount - (bean.born || 0)) / 10));
     base *= Math.pow(0.9, curses.inflation); // 通胀诅咒：每层 -10%
     let gain = Math.max(1, Math.round(base * (1 + 0.3 * skills.gold))); // 黄金胃：每层 +30%
-    // 小幸运：每层 +5% 暴击率，暴击时吃豆积分 ×2
-    const crited = skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit);
+    // 小幸运/航海图：暴击时吃豆积分 ×2
+    const crited = Math.random() < critChance();
     if (crited) gain *= 2;
     score += gain;
     fx.push({ x: bean.x, y: bean.y, text: crited ? `暴击 +${gain}!` : `+${gain}`, color: crited ? '#ffd86b' : '#a5ffe4', until: performance.now() + 800 });
@@ -652,6 +660,14 @@
       // 消化不良：概率在刚缩掉的尾巴处拉出临时过期豆
       if (skills.indigestion > 0 && Math.random() < Math.min(1, 0.1 * skills.indigestion)) {
         spawnTempBean(popped);
+      }
+    }
+    if (bean.type === 'golden') {
+      goldenEaten++; // 航海图计数（临时黄金豆也计数）
+      // 航海图：每 3 颗黄金豆 → 暴击率 +1%×层数、袋中黄金豆 +1×层数、草帽豆积分 +5×层数
+      if (skills.voyage > 0 && goldenEaten % 3 === 0) {
+        if (skills.hat > 0) hat.score += 5 * skills.voyage;
+        fx.push({ x: bean.x, y: bean.y - 1, text: '🗺️ 航海图精进!', color: '#7ec8ff', until: performance.now() + 900 });
       }
     }
     if (!bean.temp) {
