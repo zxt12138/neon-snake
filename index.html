@@ -187,7 +187,7 @@
   };
   // 豆袋模型（加权随机）：初始袋中 90 普通 + 5 黄金 + 5 过期，共 100 颗
   // 幸运星每层 +3、黄金胃每层 +1 黄金豆；食欲不振 +10、减肥 +5、饥荒 +2、窜稀 +3 过期豆
-  // 精致每层袋中普通豆 ×0.9（90→81→73…）
+  // 精致每层袋中普通豆 ×0.95（保底权重 20，普通豆不会消失）
   // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 8/103）
   const BAG_BASE = { normal: 90, golden: 5, stale: 5 };
   const LUCKY_BONUS = 3;     // 幸运星每层袋中 +3 黄金豆
@@ -208,8 +208,8 @@
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +10（可叠加）',            cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
-    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2，袋中过期豆 +2（可叠加）', cost: 1 },
-    { id: 'refine',    icon: '💎', name: '精致',     desc: '普通豆出现率 -10%，积分 +10%（可叠加）', cost: 2 },
+    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '第n层：过期豆积分+2n、袋中+2n，其它豆 -2（保底 1 分）', cost: 1 },
+    { id: 'refine',    icon: '💎', name: '精致',     desc: '普通豆出现率 -5%（有保底），积分 +10%（可叠加）', cost: 2 },
     { id: 'crit',      icon: '🎲', name: '小幸运',   desc: '吃豆积分暴击率 +5%，暴击时 ×2（可叠加）', cost: 2 },
     { id: 'depression', icon: '📉', name: '经济萧条', desc: '每吃 5 颗豆，障碍物变为临时过期豆（每层转化 1 个）', cost: 3 },
     { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -1%（可叠加），袋中过期豆 +3', cost: 1 },
@@ -249,7 +249,7 @@
   }
 
   function rollBeanType() {
-    const normalW = Math.max(1, Math.round(BAG_BASE.normal * Math.pow(0.9, skills.refine))); // 精致：每层普通豆 -10%
+    const normalW = Math.max(20, Math.round(BAG_BASE.normal * Math.pow(0.95, skills.refine))); // 精致：每层普通豆 -5%，保底权重 20
     const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky + GOLD_BAG_BONUS * skills.gold;
     const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + DIET_BAG_BONUS * skills.diet + FAMINE_BAG_BONUS * skills.famine + DIARRHEA_BAG_BONUS * skills.diarrhea;
     const total = normalW + goldenW + staleW;
@@ -458,7 +458,11 @@
     // 积少成多：每吃 10 颗过期豆，过期豆积分 +1×层数（临时过期豆同样计数）
     const accBonus = Math.floor(staleEaten / 10) * skills.accumulate;
     let base = t.score;
-    if (bean.type === 'stale') base += 2 * skills.famine + accBonus; // 饥荒：过期豆积分 +2/层
+    if (bean.type === 'stale') {
+      base += 2 * skills.famine + accBonus; // 饥荒：第 n 层过期豆积分 +2n
+    } else if (skills.famine > 0) {
+      base = Math.max(1, base - 2); // 饥荒：其它豆积分 -2，保底 1 分
+    }
     if (bean.type === 'normal') base *= 1 + 0.1 * skills.refine;     // 精致：普通豆积分 +10%/层
     let gain = Math.round(base * (1 + 0.3 * skills.gold));           // 黄金胃：每层 +30%
     // 小幸运：每层 +5% 暴击率，暴击时吃豆积分 ×2
