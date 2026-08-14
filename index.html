@@ -187,6 +187,7 @@
   };
   // 豆袋模型（加权随机）：初始袋中 90 普通 + 5 黄金 + 5 过期，共 100 颗
   // 幸运星每层 +3、黄金胃每层 +1 黄金豆；食欲不振 +10、减肥 +5、饥荒 +2、窜稀 +3 过期豆
+  // 精致每层袋中普通豆 ×0.9（90→81→73…）
   // 概率 = 该类豆子数 / 袋中总数（如 1 层幸运星后黄金豆概率 = 8/103）
   const BAG_BASE = { normal: 90, golden: 5, stale: 5 };
   const LUCKY_BONUS = 3;     // 幸运星每层袋中 +3 黄金豆
@@ -207,7 +208,9 @@
     { id: 'lucky',     icon: '🍀', name: '幸运星',   desc: '袋中黄金豆 +3（可叠加）',             cost: 3 },
     { id: 'appetite',  icon: '🤢', name: '食欲不振', desc: '袋中过期豆 +10（可叠加）',            cost: 2 },
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
-    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2、其它豆积分 -2，袋中过期豆 +2（可叠加）', cost: 1 },
+    { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2，袋中过期豆 +2（可叠加）', cost: 1 },
+    { id: 'refine',    icon: '💎', name: '精致',     desc: '普通豆出现率 -10%，积分 +10%（可叠加）', cost: 2 },
+    { id: 'crit',      icon: '🎲', name: '小幸运',   desc: '吃豆积分暴击率 +5%，暴击时 ×2（可叠加）', cost: 2 },
     { id: 'depression', icon: '📉', name: '经济萧条', desc: '每吃 5 颗豆，障碍物变为临时过期豆（每层转化 1 个）', cost: 3 },
     { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -1%（可叠加），袋中过期豆 +3', cost: 1 },
     { id: 'indigestion', icon: '🤮', name: '消化不良', desc: '吃过期豆时 10% 概率拉出临时过期豆（可叠加）', cost: 1 },
@@ -228,6 +231,7 @@
   let nextWallAt;  // 下一个硬化障碍的分数里程碑（每 1000 分 1 个）
   let staleEaten;  // 积少成多：已吃过期豆计数
   let bounty, bountyLevel, bountyTimer, bountyDead; // 赏金任务状态
+  let fx;          // 飘字特效（暴击提示等）
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -245,9 +249,10 @@
   }
 
   function rollBeanType() {
+    const normalW = Math.max(1, Math.round(BAG_BASE.normal * Math.pow(0.9, skills.refine))); // 精致：每层普通豆 -10%
     const goldenW = BAG_BASE.golden + LUCKY_BONUS * skills.lucky + GOLD_BAG_BONUS * skills.gold;
     const staleW = BAG_BASE.stale + APPETITE_BONUS * skills.appetite + DIET_BAG_BONUS * skills.diet + FAMINE_BAG_BONUS * skills.famine + DIARRHEA_BAG_BONUS * skills.diarrhea;
-    const total = BAG_BASE.normal + goldenW + staleW;
+    const total = normalW + goldenW + staleW;
     let r = Math.random() * total;
     if (r < goldenW) return 'golden';
     r -= goldenW;
@@ -389,11 +394,12 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, sweep: 0 };
     slowStacks = 0;
     nextWallAt = 1000;
     staleEaten = 0;
     bounty = null; bountyLevel = 1; bountyTimer = 0; bountyDead = false;
+    fx = [];
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -451,9 +457,16 @@
     const t = BEAN_TYPES[bean.type];
     // 积少成多：每吃 10 颗过期豆，过期豆积分 +1×层数（临时过期豆同样计数）
     const accBonus = Math.floor(staleEaten / 10) * skills.accumulate;
-    // 饥荒：过期豆积分+2，其它豆积分-2（保底 0 分）
-    const base = bean.type === 'stale' ? t.score + 2 * skills.famine + accBonus : Math.max(0, t.score - 2 * skills.famine);
-    score += Math.round(base * (1 + 0.3 * skills.gold)); // 黄金胃：每层 +30%
+    let base = t.score;
+    if (bean.type === 'stale') base += 2 * skills.famine + accBonus; // 饥荒：过期豆积分 +2/层
+    if (bean.type === 'normal') base *= 1 + 0.1 * skills.refine;     // 精致：普通豆积分 +10%/层
+    let gain = Math.round(base * (1 + 0.3 * skills.gold));           // 黄金胃：每层 +30%
+    // 小幸运：每层 +5% 暴击率，暴击时吃豆积分 ×2
+    if (skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit)) {
+      gain *= 2;
+      fx.push({ x: bean.x, y: bean.y, text: '暴击×2!', until: performance.now() + 800 });
+    }
+    score += gain;
     scoreEl.textContent = score;
     checkMilestone(); // 每 1000 分生成硬化障碍
     renderBuffs();
@@ -725,6 +738,22 @@
         ctx.fill();
       }
     });
+    // 飘字特效（暴击提示等，上飘并淡出）
+    if (fx.length) {
+      fx = fx.filter(f => f.until > now);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${Math.floor(cell * 0.55)}px sans-serif`;
+      for (const f of fx) {
+        const k = (f.until - now) / 800; // 1→0
+        ctx.globalAlpha = Math.max(0, k);
+        ctx.fillStyle = '#ffd86b';
+        ctx.shadowColor = '#ffd86b';
+        ctx.shadowBlur = 10;
+        ctx.fillText(f.text, f.x * cell + cell / 2, f.y * cell - (1 - k) * cell);
+      }
+      ctx.restore();
+    }
   }
 
   function loop(now) {
