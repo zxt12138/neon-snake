@@ -190,6 +190,7 @@
     normal: { score: 10, growth: 1,  color: '#ff5d7a' },  // 普通豆（红）
     golden: { score: 50, growth: 2,  color: '#ffb84d' },  // 黄金豆（金）
     stale:  { score: 1,  growth: -1, color: '#9aa35b' },  // 过期豆（暗绿）
+    hat:    { score: 10, growth: 1,  color: '#f2e3b6' },  // 草帽豆（数值由 hat 模板动态决定）
   };
   // 豆袋模型（加权随机）：初始袋中 90 普通 + 5 黄金 + 5 过期，共 100 颗
   // 幸运星每层 +3、黄金胃每层 +1 黄金豆；食欲不振 +10、减肥 +5、饥荒 +2、窜稀 +3 过期豆
@@ -224,6 +225,7 @@
     { id: 'feast',     icon: '🍖', name: '吃饱喝足', desc: '立刻获得 当前长度 ×10 的积分',         cost: 2 },
     { id: 'accumulate', icon: '🐷', name: '积少成多', desc: '每吃 10 颗过期豆，过期豆积分 +1（可叠加）', cost: 2 },
     { id: 'bounty',    icon: '🎯', name: '赏金任务', desc: '出现金色路线，完美走完得厚分，失败则永远失去（唯一）', cost: 3, once: true },
+    { id: 'hat',       icon: '👒', name: '草帽的传承', desc: '解锁草帽豆：每次进化后刷新，吃后三选一永久强化它（唯一）', cost: 3, once: true },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物（硬化障碍除外）', cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -238,6 +240,14 @@
     { id: 'headwind',  icon: '🌀', name: '逆风',     desc: '移速 +3%，操控更飘（可叠加）', cost: 0 },
     { id: 'fog',       icon: '🌫️', name: '迷雾',     desc: '只能看清蛇头周围 5 格（唯一）', cost: 0, once: true },
     { id: 'rot',       icon: '🦠', name: '腐烂',     desc: '豆子积分随移动贬值：每 10 格 -5%（可叠加）', cost: 0 },
+    { id: 'toll',      icon: '⛓️', name: '沉重代价', desc: '之后选择技能生成的障碍数量 ×2（可叠加）', cost: 0 },
+  ];
+
+  // ============ 草帽豆强化选项（吃草帽豆后三选一，永久强化模板） ============
+  const HAT_POOL = [
+    { id: 'h1', icon: '🍖', name: '分数强化', desc: '草帽豆分数 +10' },
+    { id: 'h2', icon: '🐌', name: '稳重路线', desc: '草帽豆分数 +1，长度 -1，移速 -5%' },
+    { id: 'h3', icon: '⚡', name: '激进路线', desc: '草帽豆分数 +50，长度 +1，移速 +5%' },
   ];
 
   // ============ 状态 ============
@@ -251,6 +261,7 @@
   let bounty, bountyLevel, bountyTimer, bountyDead; // 赏金任务状态
   let fx;          // 飘字特效（得分/暴击提示）
   let curses, cursePending, evoPending, moveCount; // 诅咒系统状态
+  let hat, hatSpeed; // 草帽豆模板（分数/长度/移速）与玩家已获得的草帽移速修正
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -301,6 +312,7 @@
     v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
     v *= Math.pow(1.01, slowStacks);    // 窜稀减速
     v *= Math.pow(0.97, curses.headwind); // 逆风诅咒：每层移速 +3%
+    v *= Math.max(0.5, 1 - hatSpeed / 100); // 草帽豆移速修正（正=加速，负=减速，最多加速到 2 倍）
     return Math.min(230, v);
   }
 
@@ -428,7 +440,35 @@
         }
       }
     }
-    // inflation / headwind / fog / rot：通过层数在对应系统生效
+    // inflation / headwind / fog / rot / toll：通过层数在对应系统生效
+  }
+
+  // ============ 草帽豆 ============
+  // 拿到「草帽的传承」后，每次进化完刷新 1 颗（场上最多 1 颗）
+  function spawnHatBean() {
+    if (beans.some(b => b.type === 'hat')) return; // 场上已有则不刷
+    const c = randomFreeCell();
+    if (c) beans.push({ x: c.x, y: c.y, type: 'hat', born: moveCount });
+  }
+
+  // 吃草帽豆后的三选一：永久强化草帽豆模板
+  function openHatDraft() {
+    drafting = true;
+    el('draftTitle').textContent = '👒 草帽豆进化！';
+    el('draftSub').textContent = `当前：${hat.score} 分 / 长度 ${hat.growth >= 0 ? '+' : ''}${hat.growth} / 移速 ${hat.speed >= 0 ? '+' : ''}${hat.speed}%`;
+    showCards(HAT_POOL, 'hat');
+  }
+
+  function chooseHat(h) {
+    if (!drafting) return;
+    if (h.id === 'h1') { hat.score += 10; }
+    else if (h.id === 'h2') { hat.score += 1; hat.growth -= 1; hat.speed -= 5; }
+    else if (h.id === 'h3') { hat.score += 50; hat.growth += 1; hat.speed += 5; }
+    drafting = false;
+    draftScreen.classList.add('hidden');
+    renderBuffs();
+    lastTick = performance.now();
+    processDrafts(); // 可能还有排队的进化/诅咒
   }
 
   // ============ 赏金任务 ============
@@ -467,14 +507,16 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, hat: 0, sweep: 0 };
     slowStacks = 0;
     nextWallAt = 1000;
     staleEaten = 0;
     bounty = null; bountyLevel = 1; bountyTimer = 0; bountyDead = false;
     fx = [];
-    curses = { wall: 0, siege: 0, rotland: 0, collapse: 0, inflation: 0, headwind: 0, fog: 0, rot: 0 };
+    curses = { wall: 0, siege: 0, rotland: 0, collapse: 0, inflation: 0, headwind: 0, fog: 0, rot: 0, toll: 0 };
     cursePending = 0; evoPending = 0; moveCount = 0;
+    hat = { score: 10, growth: 1, speed: 0 }; // 草帽豆初始模板
+    hatSpeed = 0;
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -540,6 +582,26 @@
 
   function eatBean(bean) {
     const t = BEAN_TYPES[bean.type];
+    if (bean.type === 'hat') { // 草帽豆：独立体系，吃通用收益（黄金胃/暴击/通胀/腐烂），不吃类型专属加成
+      let base = hat.score;
+      base *= Math.pow(0.95, curses.rot * Math.floor((moveCount - (bean.born || 0)) / 10)); // 腐烂
+      base *= Math.pow(0.9, curses.inflation); // 通胀
+      let gain = Math.max(1, Math.round(base * (1 + 0.3 * skills.gold))); // 黄金胃
+      const crited = skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit); // 小幸运
+      if (crited) gain *= 2;
+      score += gain;
+      fx.push({ x: bean.x, y: bean.y, text: crited ? `暴击 +${gain}!` : `+${gain}`, color: crited ? '#ffd86b' : '#f2e3b6', until: performance.now() + 800 });
+      scoreEl.textContent = score;
+      checkMilestone();
+      if (hat.growth > 0) pendingGrow += hat.growth;
+      else if (hat.growth < 0) {
+        for (let i = 0; i < -hat.growth && snake.length > MIN_LENGTH; i++) snake.pop();
+      }
+      hatSpeed += hat.speed; // 移速修正（吃时生效）
+      renderBuffs();
+      openHatDraft(); // 吃后三选一强化模板
+      return;
+    }
     // 积少成多：每吃 10 颗过期豆，过期豆积分 +1×层数（临时过期豆同样计数）
     const accBonus = Math.floor(staleEaten / 10) * skills.accumulate;
     let base = t.score;
@@ -637,7 +699,7 @@
     for (const b of eaten) {
       beans.splice(beans.indexOf(b), 1);
       eatBean(b);
-      if (!b.temp) spawnBean(); // 临时过期豆不刷新
+      if (!b.temp && b.type !== 'hat') spawnBean(); // 临时豆/草帽豆不刷新
     }
 
     // 长度增长队列
@@ -671,7 +733,7 @@
     updateEvoHud();
     el('draftTitle').innerHTML = `✨ 进化 Lv.${evoLevel}！`;
     el('draftSub').textContent = '选择一项技能 —— 力量皆有代价';
-    // 随机抽 3 张不同的卡；唯一技能（相位穿越/赏金任务）拿到后不再出现
+    // 随机抽 3 张不同的卡；唯一技能（相位穿越/赏金任务/草帽的传承）拿到后不再出现
     const pool = SKILL_POOL.filter(s => !s.once || skills[s.id] === 0);
     const picks = [];
     for (let i = 0; i < 3 && pool.length; i++) {
@@ -698,11 +760,13 @@
       card.className = 'card';
       const costHtml = mode === 'curse'
         ? '<div class="cost">即刻生效</div>'
-        : (s.cost === 0
-          ? '<div class="cost free">无代价</div>'
-          : `<div class="cost">代价：生成 ${s.cost} 个障碍</div>`);
+        : mode === 'hat'
+          ? '<div class="cost free">永久强化</div>'
+          : (s.cost === 0
+            ? '<div class="cost free">无代价</div>'
+            : `<div class="cost">代价：生成 ${s.cost * Math.pow(2, curses.toll)} 个障碍</div>`);
       card.innerHTML = `<div class="icon">${s.icon}</div><div class="name">${s.name}</div><div class="desc">${s.desc}</div>${costHtml}${isTouch ? '' : `<div class="key">按 ${i + 1}</div>`}`;
-      card.addEventListener('click', () => mode === 'curse' ? chooseCurse(s) : chooseSkill(s));
+      card.addEventListener('click', () => mode === 'curse' ? chooseCurse(s) : mode === 'hat' ? chooseHat(s) : chooseSkill(s));
       cardRow.appendChild(card);
     });
     draftScreen.dataset.picks = JSON.stringify(picks.map(p => p.id));
@@ -735,7 +799,8 @@
       skills[s.id]++;
       if (s.id === 'bounty') spawnBounty(); // 赏金任务：立刻生成第一条路线
     }
-    spawnObstacles(s.cost);
+    spawnObstacles(s.cost * Math.pow(2, curses.toll)); // 沉重代价诅咒：技能代价障碍 ×2/层
+    if (skills.hat > 0) spawnHatBean(); // 草帽的传承：每次进化完刷新草帽豆
     drafting = false;
     draftScreen.classList.add('hidden');
     renderBuffs();
@@ -802,7 +867,7 @@
       }
       ctx.restore();
     }
-    // 豆子（按种类着色；临时过期豆画成空心圆环）
+    // 豆子（按种类着色；临时豆画成空心圆环，草帽豆画 👒）
     for (const b of beans) {
       const t = BEAN_TYPES[b.type];
       const pulse = 0.75 + 0.25 * Math.sin(now / 200 + b.x + b.y);
@@ -810,16 +875,23 @@
       const br = cell * 0.3 * pulse + cell * 0.1;
       ctx.save();
       ctx.shadowColor = t.color;
-      ctx.shadowBlur = (b.type === 'golden' ? 18 : 14) * pulse;
-      ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      if (b.temp) {
-        ctx.strokeStyle = t.color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+      ctx.shadowBlur = (b.type === 'golden' || b.type === 'hat' ? 18 : 14) * pulse;
+      if (b.type === 'hat') { // 草帽豆：画草帽 emoji
+        ctx.font = `${Math.floor(cell * 0.8)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('👒', bx, by);
       } else {
-        ctx.fillStyle = t.color;
-        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        if (b.temp) {
+          ctx.strokeStyle = t.color;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = t.color;
+          ctx.fill();
+        }
       }
       ctx.restore();
     }
@@ -929,9 +1001,10 @@
     if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
     if (drafting && ['1','2','3'].includes(k)) {
       const picks = JSON.parse(draftScreen.dataset.picks || '[]');
-      const pool = draftScreen.dataset.mode === 'curse' ? CURSE_POOL : SKILL_POOL;
+      const mode = draftScreen.dataset.mode;
+      const pool = mode === 'curse' ? CURSE_POOL : mode === 'hat' ? HAT_POOL : SKILL_POOL;
       const s = pool.find(x => x.id === picks[+k - 1]);
-      if (s) (draftScreen.dataset.mode === 'curse' ? chooseCurse(s) : chooseSkill(s));
+      if (s) (mode === 'curse' ? chooseCurse(s) : mode === 'hat' ? chooseHat(s) : chooseSkill(s));
       return;
     }
     if (k === 'arrowup' || k === 'w') setDir(0, -1);
