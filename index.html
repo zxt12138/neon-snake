@@ -226,6 +226,8 @@
     { id: 'accumulate', icon: '🐷', name: '积少成多', desc: '每吃 10 颗过期豆，过期豆积分 +1（可叠加）', cost: 2 },
     { id: 'bounty',    icon: '🎯', name: '赏金任务', desc: '出现金色路线，完美走完得厚分，失败则永远失去（唯一）', cost: 3, once: true },
     { id: 'hat',       icon: '👒', name: '草帽的传承', desc: '解锁草帽豆：每次进化后刷新，吃后三选一永久强化它（唯一）', cost: 3, once: true },
+    { id: 'beans2',    icon: '🫘', name: '2豆流',    desc: '场上同时存在 2 颗豆（独立随机），吃一颗后其余消失并刷新（唯一，解锁3豆流）', cost: 3, once: true },
+    { id: 'beans3',    icon: '🫘', name: '3豆流',    desc: '场上同时存在 3 颗豆（独立随机），吃一颗后其余消失并刷新（唯一）', cost: 4, once: true, requires: 'beans2' },
     { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物（硬化障碍除外）', cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
@@ -247,7 +249,7 @@
   const HAT_POOL = [
     { id: 'h1', icon: '🍖', name: '分数强化', desc: '草帽豆分数 +10' },
     { id: 'h2', icon: '🐌', name: '稳重路线', desc: '草帽豆分数 +1，长度 -1，移速 -5%' },
-    { id: 'h3', icon: '⚡', name: '激进路线', desc: '草帽豆分数 +50，长度 +1，移速 +5%' },
+    { id: 'h3', icon: '⚡', name: '激进路线', desc: '草帽豆分数 +30，长度 +1，移速 +5%' },
   ];
 
   // ============ 状态 ============
@@ -331,6 +333,11 @@
       if (isFree(c.x, c.y)) return c;
     }
     return null;
+  }
+
+  // 常驻豆数量：默认 1，2豆流 +1，3豆流再 +1
+  function beanSlots() {
+    return 1 + (skills.beans2 > 0 ? 1 : 0) + (skills.beans3 > 0 ? 1 : 0);
   }
 
   function spawnBean() {
@@ -463,7 +470,7 @@
     if (!drafting) return;
     if (h.id === 'h1') { hat.score += 10; }
     else if (h.id === 'h2') { hat.score += 1; hat.growth -= 1; hat.speed -= 5; }
-    else if (h.id === 'h3') { hat.score += 50; hat.growth += 1; hat.speed += 5; }
+    else if (h.id === 'h3') { hat.score += 30; hat.growth += 1; hat.speed += 5; }
     drafting = false;
     draftScreen.classList.add('hidden');
     renderBuffs();
@@ -507,7 +514,7 @@
 
   function resetRun() {
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
-    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, hat: 0, sweep: 0 };
+    skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, refine: 0, crit: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, accumulate: 0, bounty: 0, hat: 0, beans2: 0, beans3: 0, sweep: 0 };
     slowStacks = 0;
     nextWallAt = 1000;
     staleEaten = 0;
@@ -523,7 +530,7 @@
     nextDir = dir;
     obstacles = [];
     beans = [];
-    for (let i = 0; i < BEAN_COUNT; i++) spawnBean();
+    for (let i = 0; i < beanSlots(); i++) spawnBean();
     scoreEl.textContent = '0';
     updateEvoHud();
     renderBuffs();
@@ -696,10 +703,17 @@
     // 吃豆（含磁铁吸附，可一次吸多颗）
     const eaten = beans.filter(b =>
       same(head, b) || (skills.magnet > 0 && manhattan(head, b) <= skills.magnet));
+    let refreshResident = false;
     for (const b of eaten) {
-      beans.splice(beans.indexOf(b), 1);
+      const idx = beans.indexOf(b);
+      if (idx < 0) continue; // 可能已被多豆刷新逻辑移除
+      beans.splice(idx, 1);
       eatBean(b);
-      if (!b.temp && b.type !== 'hat') spawnBean(); // 临时豆/草帽豆不刷新
+      if (!b.temp && b.type !== 'hat') refreshResident = true; // 吃到常驻豆：其余消失并重刷
+    }
+    if (refreshResident) { // 2豆流/3豆流：吃一颗后其余常驻豆消失，重新刷满
+      beans = beans.filter(b => b.temp || b.type === 'hat');
+      for (let i = 0; i < beanSlots(); i++) spawnBean();
     }
 
     // 长度增长队列
@@ -733,8 +747,8 @@
     updateEvoHud();
     el('draftTitle').innerHTML = `✨ 进化 Lv.${evoLevel}！`;
     el('draftSub').textContent = '选择一项技能 —— 力量皆有代价';
-    // 随机抽 3 张不同的卡；唯一技能（相位穿越/赏金任务/草帽的传承）拿到后不再出现
-    const pool = SKILL_POOL.filter(s => !s.once || skills[s.id] === 0);
+    // 随机抽 3 张不同的卡；唯一技能拿到后不再出现；3豆流需先解锁2豆流
+    const pool = SKILL_POOL.filter(s => (!s.once || skills[s.id] === 0) && (!s.requires || skills[s.requires] > 0));
     const picks = [];
     for (let i = 0; i < 3 && pool.length; i++) {
       picks.push(pool.splice(rand(pool.length), 1)[0]);
@@ -798,6 +812,9 @@
     } else {
       skills[s.id]++;
       if (s.id === 'bounty') spawnBounty(); // 赏金任务：立刻生成第一条路线
+      if (s.id === 'beans2' || s.id === 'beans3') { // 2豆流/3豆流：立刻补足场上常驻豆
+        while (beans.filter(b => !b.temp && b.type !== 'hat').length < beanSlots()) spawnBean();
+      }
     }
     spawnObstacles(s.cost * Math.pow(2, curses.toll)); // 沉重代价诅咒：技能代价障碍 ×2/层
     if (skills.hat > 0) spawnHatBean(); // 草帽的传承：每次进化完刷新草帽豆
