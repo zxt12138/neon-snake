@@ -283,6 +283,7 @@
     if (obstacles.some(o => o.x === x && o.y === y)) return false;
     if (snake.some(s => s.x === x && s.y === y)) return false;
     if (beans.some(b => b.x === x && b.y === y)) return false;
+    if (bounty && bounty.path.some(p => p.x === x && p.y === y)) return false; // 赏金路线格不被任何生成物占用
     return true;
   }
 
