@@ -39,6 +39,11 @@
     border: 1px solid rgba(93,242,198,.35);
     color: #a5ffe4;
   }
+  .curse-chip {
+    background: rgba(255,93,122,.1);
+    border: 1px solid rgba(255,93,122,.4);
+    color: #ff9db1;
+  }
   #stage {
     position: relative;
     border-radius: 14px;
@@ -143,13 +148,14 @@
       <div class="hint">
         红豆 10分+1长度 · 金豆 50分+2长度 · 暗绿豆 1分-1长度<br>
         吞食豆子积累进化（5 / 10 / 15 / 25 / 35 / 45 / 60…）<br>
-        每次进化三选一技能 · 技能的代价是地图上生成障碍
+        每次进化三选一技能 · 技能的代价是地图上生成障碍<br>
+        每 1000 分触发一次诅咒三选一
       </div>
     </div>
 
     <div class="overlay hidden" id="draftScreen">
-      <div class="draft-title">✨ 进化 Lv.<span id="draftLv">1</span>！</div>
-      <div class="draft-sub">选择一项技能 —— 力量皆有代价</div>
+      <div class="draft-title" id="draftTitle">✨ 进化 Lv.1！</div>
+      <div class="draft-sub" id="draftSub">选择一项技能 —— 力量皆有代价</div>
       <div id="cardRow"></div>
     </div>
 
@@ -222,16 +228,29 @@
   ];
   const MAX_OBSTACLES = 90;
 
+  // ============ 诅咒定义（每 1000 分三选一，硬化障碍常驻保底） ============
+  const CURSE_POOL = [
+    { id: 'wall',      icon: '🧱', name: '硬化障碍', desc: '生成 1 个无法消除的硬化障碍', cost: 0 },
+    { id: 'siege',     icon: '🏰', name: '围城',     desc: '地图边缘内侧生成一圈普通障碍', cost: 0 },
+    { id: 'rotland',   icon: '🕳️', name: '腐败之地', desc: '随机 3×3 区域被普通障碍填满', cost: 0 },
+    { id: 'collapse',  icon: '🧲', name: '引力坍缩', desc: '所有普通障碍向地图中心聚拢一格', cost: 0 },
+    { id: 'inflation', icon: '💸', name: '通胀',     desc: '所有豆子积分 -10%（可叠加）', cost: 0 },
+    { id: 'headwind',  icon: '🌀', name: '逆风',     desc: '移速 +3%，操控更飘（可叠加）', cost: 0 },
+    { id: 'fog',       icon: '🌫️', name: '迷雾',     desc: '只能看清蛇头周围 5 格（唯一）', cost: 0, once: true },
+    { id: 'rot',       icon: '🦠', name: '腐烂',     desc: '豆子积分随移动贬值：每 10 格 -5%（可叠加）', cost: 0 },
+  ];
+
   // ============ 状态 ============
   let cell = 20, size = 420;
   let snake, dir, nextDir, obstacles, beans;
   let score, best, beanCount, evoLevel, pendingGrow;
   let skills, alive, started, paused, drafting;
   let slowStacks;  // 窜稀减速层数
-  let nextWallAt;  // 下一个硬化障碍的分数里程碑（每 1000 分 1 个）
+  let nextWallAt;  // 下一个诅咒的分数里程碑（每 1000 分一次）
   let staleEaten;  // 积少成多：已吃过期豆计数
   let bounty, bountyLevel, bountyTimer, bountyDead; // 赏金任务状态
-  let fx;          // 飘字特效（暴击提示等）
+  let fx;          // 飘字特效（得分/暴击提示）
+  let curses, cursePending, evoPending, moveCount; // 诅咒系统状态
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -281,6 +300,7 @@
     let v = Math.max(80, 150 - evoLevel * 5);
     v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
     v *= Math.pow(1.01, slowStacks);    // 窜稀减速
+    v *= Math.pow(0.97, curses.headwind); // 逆风诅咒：每层移速 +3%
     return Math.min(230, v);
   }
 
@@ -303,7 +323,7 @@
 
   function spawnBean() {
     const c = randomFreeCell();
-    if (c) beans.push({ x: c.x, y: c.y, type: rollBeanType() });
+    if (c) beans.push({ x: c.x, y: c.y, type: rollBeanType(), born: moveCount });
   }
 
   function spawnObstacles(n) {
@@ -331,7 +351,7 @@
   // 生成临时豆（空心豆：吃掉后不刷新、不计进化）；优先放在指定格子（如刚缩掉的尾巴）
   function spawnTempBean(prefer, type = 'stale') {
     const c = prefer && isFree(prefer.x, prefer.y) ? prefer : randomFreeCell();
-    if (c) beans.push({ x: c.x, y: c.y, type, temp: true });
+    if (c) beans.push({ x: c.x, y: c.y, type, temp: true, born: moveCount });
   }
 
   // 经济萧条：每层技能把 1 个障碍物变为临时过期豆（硬化障碍免疫）
@@ -345,17 +365,70 @@
     }
   }
 
-  // 硬化障碍：每 1000 分生成 1 个，无法被任何形式消除（圣盾/大扫除/经济萧条均无效）
+  // 硬化障碍：无法被任何形式消除（圣盾/大扫除/经济萧条均无效）；由「硬化障碍」诅咒生成
   function spawnHardObstacle() {
     const c = randomFreeCell(4);
     if (c) obstacles.push({ x: c.x, y: c.y, hard: true });
   }
 
+  // 每 1000 分积累一次诅咒抉择（入队，由 processDrafts 依次弹出）
   function checkMilestone() {
     while (score >= nextWallAt) {
-      spawnHardObstacle();
+      cursePending++;
       nextWallAt += 1000;
     }
+  }
+
+  // 依次处理排队的进化/诅咒抉择（进化优先）
+  function processDrafts() {
+    if (drafting || !alive) return;
+    if (evoPending > 0) { evoPending--; evolve(); }
+    else if (cursePending > 0) { cursePending--; openCurseDraft(); }
+  }
+
+  // ============ 诅咒效果 ============
+  function curseObstacle(x, y) { // 诅咒生成的普通障碍（尊重上限与空格）
+    if (x < 0 || y < 0 || x >= GRID || y >= GRID) return;
+    if (obstacles.filter(o => !o.hard).length >= MAX_OBSTACLES) return;
+    if (!isFree(x, y)) return;
+    obstacles.push({ x, y });
+  }
+
+  function applyCurse(id) {
+    if (id === 'wall') {
+      spawnHardObstacle();
+    } else if (id === 'siege') { // 围城：最外圈内侧生成一圈普通障碍
+      for (let x = 1; x < GRID - 1; x++) {
+        curseObstacle(x, 1);
+        curseObstacle(x, GRID - 2);
+      }
+      for (let y = 2; y < GRID - 2; y++) {
+        curseObstacle(1, y);
+        curseObstacle(GRID - 2, y);
+      }
+    } else if (id === 'rotland') { // 腐败之地：随机 3×3 填满
+      const c = randomFreeCell(4);
+      if (c) for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) curseObstacle(c.x + dx, c.y + dy);
+    } else if (id === 'collapse') { // 引力坍缩：普通障碍向中心靠拢一格
+      const mid = Math.floor(GRID / 2);
+      for (const o of obstacles) {
+        if (o.hard) continue; // 硬化障碍纹丝不动
+        const dx = Math.sign(mid - o.x), dy = Math.sign(mid - o.y);
+        const opts = Math.abs(mid - o.x) >= Math.abs(mid - o.y)
+          ? [{ x: o.x + dx, y: o.y }, { x: o.x, y: o.y + dy }]
+          : [{ x: o.x, y: o.y + dy }, { x: o.x + dx, y: o.y }];
+        for (const t of opts) {
+          if (t.x === o.x && t.y === o.y) continue;
+          if (t.x < 0 || t.y < 0 || t.x >= GRID || t.y >= GRID) continue;
+          if (obstacles.some(p => p !== o && same(p, t))) continue;
+          if (snake.some(s => same(s, t)) || beans.some(b => same(b, t))) continue;
+          if (bounty && bounty.path.some(p => same(p, t))) continue;
+          o.x = t.x; o.y = t.y;
+          break;
+        }
+      }
+    }
+    // inflation / headwind / fog / rot：通过层数在对应系统生效
   }
 
   // ============ 赏金任务 ============
@@ -400,6 +473,8 @@
     staleEaten = 0;
     bounty = null; bountyLevel = 1; bountyTimer = 0; bountyDead = false;
     fx = [];
+    curses = { wall: 0, siege: 0, rotland: 0, collapse: 0, inflation: 0, headwind: 0, fog: 0, rot: 0 };
+    cursePending = 0; evoPending = 0; moveCount = 0;
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -436,6 +511,16 @@
       chip.title = '窜稀减速';
       buffBar.appendChild(chip);
     }
+    for (const c of CURSE_POOL) { // 生效中的诅咒（红色标记）
+      const n = curses[c.id];
+      if (n > 0) {
+        const chip = document.createElement('div');
+        chip.className = 'buff-chip curse-chip';
+        chip.textContent = n > 1 ? `${c.icon}×${n}` : c.icon;
+        chip.title = c.name;
+        buffBar.appendChild(chip);
+      }
+    }
   }
 
   function die() {
@@ -464,15 +549,17 @@
       base = Math.max(1, base - 2); // 饥荒：其它豆积分 -2，保底 1 分
     }
     if (bean.type === 'normal') base *= 1 + 0.1 * skills.refine;     // 精致：普通豆积分 +10%/层
-    let gain = Math.round(base * (1 + 0.3 * skills.gold));           // 黄金胃：每层 +30%
+    // 腐烂诅咒：豆子每 10 格移动贬值 5%×层数
+    base *= Math.pow(0.95, curses.rot * Math.floor((moveCount - (bean.born || 0)) / 10));
+    base *= Math.pow(0.9, curses.inflation); // 通胀诅咒：每层 -10%
+    let gain = Math.max(1, Math.round(base * (1 + 0.3 * skills.gold))); // 黄金胃：每层 +30%
     // 小幸运：每层 +5% 暴击率，暴击时吃豆积分 ×2
-    if (skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit)) {
-      gain *= 2;
-      fx.push({ x: bean.x, y: bean.y, text: '暴击×2!', until: performance.now() + 800 });
-    }
+    const crited = skills.crit > 0 && Math.random() < Math.min(1, 0.05 * skills.crit);
+    if (crited) gain *= 2;
     score += gain;
+    fx.push({ x: bean.x, y: bean.y, text: crited ? `暴击 +${gain}!` : `+${gain}`, color: crited ? '#ffd86b' : '#a5ffe4', until: performance.now() + 800 });
     scoreEl.textContent = score;
-    checkMilestone(); // 每 1000 分生成硬化障碍
+    checkMilestone(); // 每 1000 分积累一次诅咒
     renderBuffs();
     if (!bean.temp) { // 临时过期豆不计入进化
       beanCount++;
@@ -501,11 +588,13 @@
     if (!bean.temp) {
       // 经济萧条：每吃 5 颗豆，障碍物变为临时过期豆
       if (skills.depression > 0 && beanCount % 5 === 0) depress();
-      if (!drafting && beanCount >= evoThreshold(evoLevel + 1)) evolve();
+      if (beanCount >= evoThreshold(evoLevel + 1)) evoPending++; // 进化入队
     }
+    processDrafts(); // 依次弹出排队的进化/诅咒抉择
   }
 
   function tick() {
+    moveCount++; // 全局移动计数（腐烂诅咒以此计算贬值）
     dir = nextDir;
     let head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
 
@@ -580,26 +669,56 @@
     drafting = true;
     evoLevel++;
     updateEvoHud();
-    el('draftLv').textContent = evoLevel;
+    el('draftTitle').innerHTML = `✨ 进化 Lv.${evoLevel}！`;
+    el('draftSub').textContent = '选择一项技能 —— 力量皆有代价';
     // 随机抽 3 张不同的卡；唯一技能（相位穿越/赏金任务）拿到后不再出现
     const pool = SKILL_POOL.filter(s => !s.once || skills[s.id] === 0);
     const picks = [];
     for (let i = 0; i < 3 && pool.length; i++) {
       picks.push(pool.splice(rand(pool.length), 1)[0]);
     }
+    showCards(picks, 'evo');
+  }
+
+  // 诅咒三选一：硬化障碍常驻保底，其余 2 张从诅咒池随机（唯一诅咒拿到后不再出现）
+  function openCurseDraft() {
+    drafting = true;
+    el('draftTitle').textContent = '⚠️ 诅咒降临！';
+    el('draftSub').textContent = `得分突破 ${(nextWallAt - 1000).toLocaleString()} —— 选择一种诅咒`;
+    const rest = CURSE_POOL.filter(c => c.id !== 'wall' && (!c.once || curses[c.id] === 0));
+    const picks = [CURSE_POOL[0]];
+    while (picks.length < 3 && rest.length) picks.push(rest.splice(rand(rest.length), 1)[0]);
+    showCards(picks, 'curse');
+  }
+
+  function showCards(picks, mode) {
     cardRow.innerHTML = '';
     picks.forEach((s, i) => {
       const card = document.createElement('div');
       card.className = 'card';
-      const costHtml = s.cost === 0
-        ? '<div class="cost free">无代价</div>'
-        : `<div class="cost">代价：生成 ${s.cost} 个障碍</div>`;
+      const costHtml = mode === 'curse'
+        ? '<div class="cost">即刻生效</div>'
+        : (s.cost === 0
+          ? '<div class="cost free">无代价</div>'
+          : `<div class="cost">代价：生成 ${s.cost} 个障碍</div>`);
       card.innerHTML = `<div class="icon">${s.icon}</div><div class="name">${s.name}</div><div class="desc">${s.desc}</div>${costHtml}${isTouch ? '' : `<div class="key">按 ${i + 1}</div>`}`;
-      card.addEventListener('click', () => chooseSkill(s));
+      card.addEventListener('click', () => mode === 'curse' ? chooseCurse(s) : chooseSkill(s));
       cardRow.appendChild(card);
     });
     draftScreen.dataset.picks = JSON.stringify(picks.map(p => p.id));
+    draftScreen.dataset.mode = mode;
     draftScreen.classList.remove('hidden');
+  }
+
+  function chooseCurse(c) {
+    if (!drafting) return;
+    curses[c.id]++;
+    applyCurse(c.id);
+    drafting = false;
+    draftScreen.classList.add('hidden');
+    renderBuffs();
+    lastTick = performance.now();
+    processDrafts(); // 可能还有排队的进化/诅咒
   }
 
   function chooseSkill(s) {
@@ -621,6 +740,7 @@
     draftScreen.classList.add('hidden');
     renderBuffs();
     lastTick = performance.now();
+    processDrafts(); // 可能还有排队的诅咒/进化
   }
 
   // ============ 渲染 ============
@@ -742,7 +862,7 @@
         ctx.fill();
       }
     });
-    // 飘字特效（暴击提示等，上飘并淡出）
+    // 飘字特效（得分/暴击提示，上飘并淡出）
     if (fx.length) {
       fx = fx.filter(f => f.until > now);
       ctx.save();
@@ -751,12 +871,21 @@
       for (const f of fx) {
         const k = (f.until - now) / 800; // 1→0
         ctx.globalAlpha = Math.max(0, k);
-        ctx.fillStyle = '#ffd86b';
-        ctx.shadowColor = '#ffd86b';
+        ctx.fillStyle = f.color || '#ffd86b';
+        ctx.shadowColor = f.color || '#ffd86b';
         ctx.shadowBlur = 10;
         ctx.fillText(f.text, f.x * cell + cell / 2, f.y * cell - (1 - k) * cell);
       }
       ctx.restore();
+    }
+    // 迷雾诅咒：只看清蛇头周围 5 格
+    if (curses.fog > 0 && snake.length) {
+      const hx = snake[0].x * cell + cell / 2, hy = snake[0].y * cell + cell / 2;
+      const g = ctx.createRadialGradient(hx, hy, cell * 2.5, hx, hy, cell * 5);
+      g.addColorStop(0, 'rgba(10,14,26,0)');
+      g.addColorStop(1, 'rgba(5,8,16,0.96)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
     }
   }
 
@@ -781,6 +910,7 @@
     startScreen.classList.add('hidden');
     gameOverScreen.classList.add('hidden');
     draftScreen.classList.add('hidden');
+    if (document.activeElement) document.activeElement.blur(); // 防止回车误触按钮重开
   }
 
   function setDir(x, y) {
@@ -799,8 +929,9 @@
     if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
     if (drafting && ['1','2','3'].includes(k)) {
       const picks = JSON.parse(draftScreen.dataset.picks || '[]');
-      const s = SKILL_POOL.find(x => x.id === picks[+k - 1]);
-      if (s) chooseSkill(s);
+      const pool = draftScreen.dataset.mode === 'curse' ? CURSE_POOL : SKILL_POOL;
+      const s = pool.find(x => x.id === picks[+k - 1]);
+      if (s) (draftScreen.dataset.mode === 'curse' ? chooseCurse(s) : chooseSkill(s));
       return;
     }
     if (k === 'arrowup' || k === 'w') setDir(0, -1);
