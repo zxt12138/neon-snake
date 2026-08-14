@@ -209,11 +209,11 @@
     { id: 'diet',      icon: '🏃', name: '我要减肥!', desc: '过期豆长度额外 -1，且袋中过期豆 +5（可叠加）', cost: 2 },
     { id: 'famine',    icon: '🥣', name: '饥荒',     desc: '过期豆积分 +2、其它豆积分 -2，袋中过期豆 +2（可叠加）', cost: 1 },
     { id: 'depression', icon: '📉', name: '经济萧条', desc: '每吃 5 颗豆，障碍物变为临时过期豆（每层转化 1 个）', cost: 3 },
-    { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -5%（可叠加），袋中过期豆 +3', cost: 1 },
+    { id: 'diarrhea',  icon: '💩', name: '窜稀',     desc: '吃过期豆后移速 -1%（可叠加），袋中过期豆 +3', cost: 1 },
     { id: 'indigestion', icon: '🤮', name: '消化不良', desc: '吃过期豆时 10% 概率拉出临时过期豆（可叠加）', cost: 1 },
     { id: 'digger',    icon: '⛏️', name: '掘金者',   desc: '生成障碍时，其旁 5% 概率出现临时黄金豆（可叠加）', cost: 2 },
     { id: 'feast',     icon: '🍖', name: '吃饱喝足', desc: '立刻获得 当前长度 ×10 的积分',         cost: 2 },
-    { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物',                cost: 0 },
+    { id: 'sweep',     icon: '🧹', name: '大扫除',   desc: '清除地图上所有障碍物（硬化障碍除外）', cost: 0 },
   ];
   const MAX_OBSTACLES = 90;
 
@@ -223,6 +223,7 @@
   let score, best, beanCount, evoLevel, pendingGrow;
   let skills, alive, started, paused, drafting;
   let slowStacks;  // 窜稀减速层数
+  let nextWallAt;  // 下一个硬化障碍的分数里程碑（每 1000 分 1 个）
   let lastTick = 0;
 
   best = parseInt(localStorage.getItem('rogue_snake_best') || '0', 10);
@@ -270,7 +271,7 @@
     // 基础速度随进化提升（每级 -5ms，最快 80ms）；无其它自动加速
     let v = Math.max(80, 150 - evoLevel * 5);
     v *= Math.pow(1.15, skills.slow);   // 稳定锚减速
-    v *= Math.pow(1.05, slowStacks);    // 窜稀减速
+    v *= Math.pow(1.01, slowStacks);    // 窜稀减速
     return Math.min(230, v);
   }
 
@@ -296,7 +297,7 @@
   }
 
   function spawnObstacles(n) {
-    for (let i = 0; i < n && obstacles.length < MAX_OBSTACLES; i++) {
+    for (let i = 0; i < n && obstacles.filter(o => !o.hard).length < MAX_OBSTACLES; i++) {
       const c = randomFreeCell(4); // 离蛇头至少 4 格，避免贴脸杀
       if (!c) continue;
       obstacles.push(c);
@@ -323,11 +324,27 @@
     if (c) beans.push({ x: c.x, y: c.y, type, temp: true });
   }
 
-  // 经济萧条：每层技能把 1 个障碍物变为临时过期豆
+  // 经济萧条：每层技能把 1 个障碍物变为临时过期豆（硬化障碍免疫）
   function depress() {
-    for (let i = 0; i < skills.depression && obstacles.length; i++) {
-      const o = obstacles.splice(rand(obstacles.length), 1)[0];
+    for (let i = 0; i < skills.depression; i++) {
+      const soft = obstacles.filter(o => !o.hard);
+      if (!soft.length) break;
+      const o = soft[rand(soft.length)];
+      obstacles.splice(obstacles.indexOf(o), 1);
       spawnTempBean(o);
+    }
+  }
+
+  // 硬化障碍：每 1000 分生成 1 个，无法被任何形式消除（圣盾/大扫除/经济萧条均无效）
+  function spawnHardObstacle() {
+    const c = randomFreeCell(4);
+    if (c) obstacles.push({ x: c.x, y: c.y, hard: true });
+  }
+
+  function checkMilestone() {
+    while (score >= nextWallAt) {
+      spawnHardObstacle();
+      nextWallAt += 1000;
     }
   }
 
@@ -335,6 +352,7 @@
     score = 0; beanCount = 0; evoLevel = 0; pendingGrow = 0;
     skills = { shield: 0, magnet: 0, gold: 0, slow: 0, trim: 0, phase: 0, lucky: 0, appetite: 0, diet: 0, famine: 0, depression: 0, diarrhea: 0, indigestion: 0, digger: 0, feast: 0, sweep: 0 };
     slowStacks = 0;
+    nextWallAt = 1000;
     const c = Math.floor(GRID / 2);
     snake = [{ x: c, y: c }, { x: c - 1, y: c }, { x: c - 2, y: c }];
     dir = { x: 1, y: 0 };
@@ -394,6 +412,7 @@
     const base = bean.type === 'stale' ? t.score + 2 * skills.famine : Math.max(0, t.score - 2 * skills.famine);
     score += Math.round(base * (1 + 0.3 * skills.gold)); // 黄金胃：每层 +30%
     scoreEl.textContent = score;
+    checkMilestone(); // 每 1000 分生成硬化障碍
     renderBuffs();
     if (!bean.temp) { // 临时过期豆不计入进化
       beanCount++;
@@ -446,6 +465,7 @@
     if (oIdx >= 0) {
       if (skills.shield > 0) {
         skills.shield--; renderBuffs();
+        if (obstacles[oIdx].hard) return; // 硬化障碍：圣盾保命但撞不碎，原地停一回合
         obstacles.splice(oIdx, 1); // 圣盾撞碎障碍
       } else return die();
     }
@@ -509,10 +529,11 @@
     if (s.id === 'trim') {
       snake = snake.slice(0, Math.max(MIN_LENGTH + 1, Math.ceil(snake.length * 0.7)));
     } else if (s.id === 'sweep') {
-      obstacles = [];
+      obstacles = obstacles.filter(o => o.hard); // 大扫除清不掉硬化障碍
     } else if (s.id === 'feast') {
       score += snake.length * 10; // 吃饱喝足：一次性积分
       scoreEl.textContent = score;
+      checkMilestone();
     } else {
       skills[s.id]++;
     }
@@ -544,14 +565,25 @@
       ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, size); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(size, i * cell); ctx.stroke();
     }
-    // 障碍物（暗紫晶石）
+    // 障碍物（暗紫晶石；硬化障碍为暗红色，无法消除）
     ctx.save();
-    ctx.shadowColor = '#7a3bbf';
     ctx.shadowBlur = 6;
-    ctx.fillStyle = '#3d2358';
     for (const o of obstacles) {
+      if (o.hard) {
+        ctx.shadowColor = '#ff5d7a';
+        ctx.fillStyle = '#571c2b';
+      } else {
+        ctx.shadowColor = '#7a3bbf';
+        ctx.fillStyle = '#3d2358';
+      }
       roundRect(o.x * cell + 2, o.y * cell + 2, cell - 4, cell - 4, cell * 0.2);
       ctx.fill();
+      if (o.hard) { // 硬化障碍画一个核心点标记
+        ctx.fillStyle = '#ff5d7a';
+        ctx.beginPath();
+        ctx.arc(o.x * cell + cell / 2, o.y * cell + cell / 2, cell * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
     // 豆子（按种类着色；临时过期豆画成空心圆环）
